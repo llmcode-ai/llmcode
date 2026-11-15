@@ -135,11 +135,18 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
         debugLog("reuse running request (same position)");
         return this.running.promise;
       }
-      // Different position: fall through and fire a fresh request.
+      // A different position while a request is running: for automatic triggers,
+      // skip — the in-flight result is close enough and starting another would
+      // create a thundering herd of slow engine calls. Explicit Invoke waits.
+      if (!invoke) {
+        debugLog("skip: busy with another position");
+        return undefined;
+      }
+      return this.running.promise.then(() => this.fire(document, position, invoke, token));
     }
 
     // Throttle automatic triggers; explicit Invoke is never throttled.
-    if (!invoke && !this.running && now - this.lastFire < DEBOUNCE_MS) {
+    if (!invoke && now - this.lastFire < DEBOUNCE_MS) {
       debugLog("skip: throttle");
       return undefined;
     }
@@ -192,11 +199,14 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       const suffix = text.slice(offset).slice(0, MAX_SUFFIX);
 
       const language = document.languageId;
-      const prompt = this.buildFimPrompt(language, prefix, suffix);
+      // Fenced format with an explicit <CURSOR> marker reliably makes the model
+      // emit code (not prose), even when the surrounding file has comments in
+      // other languages.
+      const prompt = "```" + language + "\n" + prefix + "<CURSOR>" + suffix + "\n```";
 
       const model = resolveModel();
       const system =
-        "You are a code completion engine. Continue the given code by outputting ONLY the exact characters to insert at the cursor. No explanations, no markdown, no commentary, no questions. Never write prose or Russian text.";
+        "You are an autocomplete engine. Continue the code after <CURSOR>. Output ONLY the characters that go at <CURSOR> — no fences, no explanation, no prose, no questions.";
       // Engine call with tools disabled: reliable, constrained, no chatter.
       // Hard timeout so a slow/looping engine call cannot wedge autocomplete.
       const r = await Promise.race([
@@ -222,14 +232,6 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       debugLog("ERROR: " + (err as Error).message);
       return undefined;
     }
-  }
-
-  private buildFimPrompt(language: string, prefix: string, suffix: string): string {
-    // For a raw completion model: give the code up to the cursor, and (if any)
-    // a note about what follows so it does not duplicate the suffix.
-    const hasSuffix = suffix.trim().length > 0;
-    if (!hasSuffix) return prefix;
-    return `${prefix}\n// (the code after the cursor: ${JSON.stringify(suffix.slice(0, 80))} — do not repeat it)`;
   }
 
   private cleanCompletion(completion: string, suffix: string, prefix: string): string {
