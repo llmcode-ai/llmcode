@@ -46,33 +46,10 @@ jobs:
       - name: Publish to VS Code Marketplace (Trusted Publishing)
         id: publish
         run: |
-          npx --yes @vscode/vsce@4 publish --oidc --packagePath "llmcode-${{ github.ref_name }}.vsix" > /tmp/publish.log 2>&1
-          code=$?
-          cat /tmp/publish.log
-          cp /tmp/publish.log publish.log
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          exit $code
+          npx --yes @vscode/vsce@4 publish --oidc --packagePath "llmcode-${{ github.ref_name }}.vsix"
 
       - name: Publish fallback (PAT)
         if: failure() && env.VSCE_PAT != ''
         run: npx --yes @vscode/vsce@4 publish --packagePath "llmcode-${{ github.ref_name }}.vsix"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
-      - name: Save publish log to release body
-        if: always()
-        run: |
-          LOG=$(cat /tmp/publish.log 2>/dev/null || echo "no log")
-          {
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/...${{ github.ref_name }}"
-            echo ""
-            echo "<details><summary>Marketplace publish log</summary>"
-            echo ""
-            echo '```'
-            echo "$LOG"
-            echo '```'
-            echo "</details>"
-          } > /tmp/release_body.md
-          gh release edit "${{ github.ref_name }}" --notes-file /tmp/release_body.md || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
