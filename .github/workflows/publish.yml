@@ -1,4 +1,4 @@
-name: Publish Extension
+name: Release & Publish Extension
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,20 +29,41 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      # Trusted Publishing: exchanges a GitHub OIDC token for a short-lived
-      # Marketplace credential. Requires a Trusted Publishing policy on the
-      # publisher pointing at this repo + workflow (configured in the portal).
+      - name: Package VSIX
+        run: npx --yes @vscode/vsce@4 package --no-dependencies --out "llmcode-${{ github.ref_name }}.vsix"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: LLMcode ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: "llmcode-${{ github.ref_name }}.vsix"
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to VS Code Marketplace (Trusted Publishing)
+        id: publish
+        continue-on-error: true
         run: |
+          set +e
           npx --yes @vscode/vsce@4 publish --oidc > /tmp/publish.log 2>&1
-          status=$?
+          code=$?
           cat /tmp/publish.log
-          if [ $status -ne 0 ]; then
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ $code -ne 0 ]; then
             {
-              echo "## Publish failed"
+              echo "## Marketplace publish failed (exit $code)"
               echo '```'
-              tail -50 /tmp/publish.log
+              tail -60 /tmp/publish.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            exit $status
           fi
+          exit $code
+
+      - name: Publish fallback (PAT)
+        if: steps.publish.outcome == 'failure' && env.VSCE_PAT != ''
+        run: npx --yes @vscode/vsce@4 publish --packagePath "llmcode-${{ github.ref_name }}.vsix"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
