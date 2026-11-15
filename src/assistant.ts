@@ -8,6 +8,20 @@ import type { OpencodeBridge } from "./opencode";
 //   client-side, generation through opencode bridge.generateText.
 // - Inline edit: selection -> generation -> native vscode.diff apply/reject.
 
+import * as os from "node:os";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+function debugLog(msg: string) {
+  try {
+    if (!vscode.workspace.getConfiguration("llmcode").get<boolean>("debug", false)) return;
+    const file = path.join(os.homedir(), ".llmcode-debug.log");
+    fs.appendFileSync(file, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {
+    // ignore
+  }
+}
+
 let output: vscode.OutputChannel | undefined;
 let statusBar: vscode.StatusBarItem | undefined;
 
@@ -103,8 +117,9 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     token: vscode.CancellationToken,
   ): vscode.ProviderResult<vscode.InlineCompletionItem[] | vscode.InlineCompletionList> {
     const cfg = vscode.workspace.getConfiguration("llmcode.autocomplete");
-    if (!cfg.get<boolean>("enabled", true)) return undefined;
-    if (!this.shouldTrigger(document, position, context)) return undefined;
+    if (!cfg.get<boolean>("enabled", true)) { debugLog("skip: disabled"); return undefined; }
+    if (!this.shouldTrigger(document, position, context)) { debugLog("skip: trigger"); return undefined; }
+    debugLog(`trigger at ${position.line}:${position.character} kind=${context.triggerKind}`);
 
     // Cancel any in-flight request and schedule a new one after the debounce.
     this.inflight?.cancel();
@@ -164,13 +179,15 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       if (!completion || !completion.trim()) return undefined;
 
       const cleaned = this.cleanCompletion(completion, suffix, prefix);
-      if (!cleaned) return undefined;
+      debugLog(`raw=${JSON.stringify(completion.slice(0,80))} cleaned=${JSON.stringify(cleaned.slice(0,80))} actual=${actual}`);
+      if (!cleaned) { debugLog("cleaned empty"); return undefined; }
 
       // Insert at the cursor; the range must be present for ghost text to insert.
       const range = new vscode.Range(position, position);
       return [new vscode.InlineCompletionItem(cleaned, range)];
     } catch (err) {
       console.warn("[llmcode] autocomplete error:", err);
+      debugLog("ERROR: " + (err as Error).message);
       return undefined;
     }
   }
