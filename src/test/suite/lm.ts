@@ -29,6 +29,26 @@ suite("LLMcode Language Model Provider", () => {
     );
   });
 
+  test("activates on startup so the native chat unlocks", () => {
+    const ext = vscode.extensions.getExtension("llmcode.llmcode");
+    const events: string[] = (ext!.packageJSON.activationEvents as string[]) ?? [];
+    assert.ok(events.includes("onStartupFinished"), "expected onStartupFinished activation event");
+  });
+
+  test("sets chat.defaultModel to an opencode model", async function () {
+    this.timeout(30000);
+    const models = await vscode.lm.selectChatModels({ vendor: "llmcode" } as any);
+    assert.ok(models.length > 0, "no opencode models");
+    const cfg = vscode.workspace.getConfiguration("chat");
+    const deadline = Date.now() + 15000;
+    let def = cfg.get<string>("defaultModel");
+    while ((!def || !def.includes("/")) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 300));
+      def = cfg.get<string>("defaultModel");
+    }
+    assert.ok(def && def.includes("/"), `expected chat.defaultModel set to an opencode model, got ${def}`);
+  });
+
   test("exposes opencode models through lm.selectChatModels", async function () {
     this.timeout(30000);
     let models: vscode.LanguageModelChat[] = [];
