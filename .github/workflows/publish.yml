@@ -48,18 +48,16 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          npx --yes @vscode/vsce@4 publish --oidc > /tmp/publish.log 2>&1
+          npx --yes @vscode/vsce@4 publish --oidc --packagePath "llmcode-${{ github.ref_name }}.vsix" > /tmp/publish.log 2>&1
           code=$?
           cat /tmp/publish.log
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          if [ $code -ne 0 ]; then
-            {
-              echo "## Marketplace publish failed (exit $code)"
-              echo '```'
-              tail -60 /tmp/publish.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            echo "## Marketplace publish (exit $code)"
+            echo '```'
+            cat /tmp/publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
       - name: Publish fallback (PAT)
