@@ -95,6 +95,51 @@ export class OpencodeBridge {
 
   private startPromise: Promise<void> | undefined;
 
+  /**
+   * Make sure the `opencode` binary is resolvable on the process PATH. The SDK
+   * spawns a bare `opencode` via cross-spawn; the extension host PATH may miss
+   * common locations (/snap/bin, ~/.local/bin, /usr/local/bin, ~/.opencode/bin),
+   * which yields `spawn opencode ENOENT`.
+   */
+  private async ensureOpencodeOnPath(): Promise<void> {
+    const path = require("node:path") as typeof import("node:path");
+    const fs = require("node:fs") as typeof import("node:fs");
+    const os = require("node:os") as typeof import("node:os");
+
+    // 1. Respect an explicit configured command path.
+    const configured = vscode.workspace.getConfiguration("llmcode.opencode").get<string>("command", "").trim();
+    const candidates: string[] = [];
+    if (configured && configured !== "opencode") candidates.push(configured);
+    // 2. Detected CLI (already checks PATH + WSL).
+    const detected = await OpencodeBridge.detectCli();
+    if (detected) candidates.push(detected);
+    // 3. Common install locations.
+    const home = os.homedir();
+    candidates.push(
+      "/snap/bin/opencode",
+      path.join(home, ".opencode", "bin", "opencode"),
+      path.join(home, ".local", "bin", "opencode"),
+      path.join(home, ".bun", "bin", "opencode"),
+      "/usr/local/bin/opencode",
+      "/usr/bin/opencode",
+    );
+
+    const existing = candidates.find((c) => {
+      try {
+        return c && fs.existsSync(c);
+      } catch {
+        return false;
+      }
+    });
+    if (existing) {
+      const dir = path.dirname(existing);
+      const parts = (process.env.PATH ?? "").split(path.delimiter);
+      if (!parts.includes(dir)) {
+        process.env.PATH = [dir, ...parts].join(path.delimiter);
+      }
+    }
+  }
+
   /** Start the engine (idempotent). Resolves once the client is ready. */
   start(directory?: string): Promise<void> {
     if (this.instance) return Promise.resolve();
@@ -112,6 +157,12 @@ export class OpencodeBridge {
     const cfg = vscode.workspace.getConfiguration("llmcode.opencode");
     const configuredPort = cfg.get<number>("port", 0);
     const hostname = cfg.get<string>("hostname", "127.0.0.1");
+
+    // The SDK spawns a bare `opencode` command via cross-spawn, resolving it
+    // from process.env.PATH. The VS Code extension host often lacks the shell's
+    // PATH entries (e.g. /snap/bin), causing `spawn opencode ENOENT`. Resolve the
+    // binary now and add its directory to PATH so the spawn succeeds.
+    await this.ensureOpencodeOnPath();
 
     const sdk: SDK = (await import("@opencode-ai/sdk")) as any;
 
