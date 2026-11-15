@@ -2,6 +2,7 @@
 .vscode-test/**
 .vscode-test.mjs
 .vscodeignore
+.github/**
 src/**
 out/**
 out-test/**
@@ -10,7 +11,7 @@ node_modules/**
 **/*.map
 .gitignore
 tsconfig.json
-README.md
 media/llmcode.svg
-package-lock.json**
+media/icon.svg
+package-lock.json
 *.vsix

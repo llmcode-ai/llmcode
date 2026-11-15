@@ -5,17 +5,37 @@
   "version": "0.1.0",
   "publisher": "llmcode",
   "license": "MIT",
-  "private": true,
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/llmcode-ai/llmcode.git"
   },
+  "homepage": "https://github.com/llmcode-ai/llmcode#readme",
+  "bugs": {
+    "url": "https://github.com/llmcode-ai/llmcode/issues"
+  },
+  "keywords": [
+    "opencode",
+    "ai",
+    "chat",
+    "assistant",
+    "copilot",
+    "cursor",
+    "autocomplete",
+    "code generation",
+    "mcp"
+  ],
   "engines": {
     "vscode": "^1.94.0"
   },
+  "galleryBanner": {
+    "color": "#0b3d91",
+    "theme": "dark"
+  },
   "categories": [
     "Machine Learning",
-    "Chat"
+    "Chat",
+    "Programming Languages"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
