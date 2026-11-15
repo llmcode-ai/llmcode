@@ -92,5 +92,12 @@ suite("LLMcode Language Model Provider", () => {
     );
     assert.ok(streamed.length > 0, "expected streamed text from opencode via the LM provider");
   });
+  test("contributes the @llmcode chat participant", () => {
+    const ext = vscode.extensions.getExtension("llmcode.llmcode");
+    const parts = (ext!.packageJSON.contributes as any)?.chatParticipants ?? [];
+    assert.ok(
+      parts.some((p: any) => p.id === "llmcode.agent"),
+      "chatParticipants contribution with id=llmcode.agent missing",
+    );
+  });
 });
-

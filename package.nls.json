@@ -21,5 +21,6 @@
   "command.openSettings": "LLMcode: Open Settings",
   "view.welcome": "LLMcode",
   "command.selectChatModel": "LLMcode: Select Chat Model",
-  "config.setDefaultChatModel": "Make LLMcode (opencode) the default model in VS Code chat when no default is set."
+  "config.setDefaultChatModel": "Make LLMcode (opencode) the default model in VS Code chat when no default is set.",
+  "chatParticipant.description": "Chat with the opencode engine"
 }

@@ -193,6 +193,15 @@
         "vendor": "llmcode",
         "displayName": "LLMcode (opencode)"
       }
+    ],
+    "chatParticipants": [
+      {
+        "id": "llmcode.agent",
+        "name": "llmcode",
+        "fullName": "LLMcode (opencode)",
+        "description": "%chatParticipant.description%",
+        "isSticky": true
+      }
     ]
   },
   "scripts": {

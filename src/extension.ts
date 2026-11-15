@@ -5,6 +5,7 @@ import { SettingsPanel } from "./settings";
 import { AutocompleteProvider, inlineEditSelection, selectionCommand } from "./assistant";
 import { importFromMachine } from "./import";
 import { registerChatProvider } from "./lmProvider";
+import { registerChatParticipant } from "./chatParticipant";
 
 let bridge: OpencodeBridge;
 
@@ -14,6 +15,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register opencode as a native language-model provider so VS Code's own chat
   // (Copilot Chat UI, inline chat, terminal chat) can use opencode models.
   const chatProvider = registerChatProvider(bridge, context);
+
+  // A stable @llmcode participant so LLMcode also appears as an agent in chat.
+  registerChatParticipant(bridge, context);
 
   // Mode B: autocomplete + inline edit
   const autocomplete = new AutocompleteProvider(bridge);
