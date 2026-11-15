@@ -62,22 +62,21 @@ export async function activate(context: vscode.ExtensionContext) {
 
 
 async function selectChatModel() {
-  // Help the user pick an LLMcode model in the native chat (Copilot Chat / inline
-  // chat). VS Code remembers the choice per surface after the first selection.
+  // Open VS Code's native chat model picker so the user can select an LLMcode
+  // model right where they chat. The provider is registered on startup.
   const models = await vscode.lm.selectChatModels({ vendor: "llmcode" } as any);
   if (!models.length) {
-    vscode.window.showWarningMessage(l10n.t("No LLMcode models available yet. Make sure the opencode engine is running."));
+    vscode.window.showWarningMessage(
+      l10n.t("No LLMcode models available yet. Make sure the opencode engine is running (LLMcode: Check opencode Installation)."),
+    );
     return;
   }
-  const picked = await vscode.window.showQuickPick(
-    models.map((m) => ({ label: m.name, description: m.family, detail: m.id })),
-    { placeHolder: l10n.t("Pick an LLMcode (opencode) model, then choose it in the chat model picker") },
+  // Focus the chat and open its model picker.
+  await vscode.commands.executeCommand("workbench.action.chat.open");
+  await vscode.commands.executeCommand("workbench.action.chat.changeModel");
+  vscode.window.showInformationMessage(
+    l10n.t("In the model picker, choose a model under \"LLMcode (opencode)\"."),
   );
-  if (picked) {
-    vscode.window.showInformationMessage(
-      l10n.t("In the chat model picker, choose \"{0}\" under LLMcode (opencode). VS Code remembers it.", picked.label),
-    );
-  }
 }
 
 async function ensureOpencode() {
