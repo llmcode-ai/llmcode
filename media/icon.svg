@@ -1,5 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" fill="#131010"/>
-  <path d="M320 224V352H192V224H320Z" fill="#5A5858"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12B886"/>
+      <stop offset="1" stop-color="#0B7A5B"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <path d="M176 132H80V196H176V132Z" fill="#083F30" fill-opacity="0.55"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M196 212H60V44H196V212ZM160 80H96V176H160V80Z" fill="#FFFFFF"/>
+  <path d="M143 104H113V136H143V104Z" fill="#12B886"/>
+  <circle cx="212" cy="52" r="26" fill="#FFD43B"/>
+  <path d="M204 52l6 6 12-13" stroke="#083F30" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>
