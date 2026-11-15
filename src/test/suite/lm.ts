@@ -64,6 +64,9 @@ suite("LLMcode Language Model Provider", () => {
       ids.some((id) => id.includes("/")),
       `expected provider/model style ids, got: ${ids.slice(0, 5).join(", ")}`,
     );
+    // The engine reports a 1M context window for opus; the provider must expose it.
+    const maxInput = Math.max(...models.map((m) => (m as any).maxInputTokens ?? 0));
+    assert.ok(maxInput >= 200000, `expected a large context window (>=200k), got ${maxInput}`);
   });
 
   test("streams a response from opencode through the provider", async function () {

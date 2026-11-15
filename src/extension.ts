@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
 import { l10n } from "vscode";
 import { OpencodeBridge } from "./opencode";
-import { ChatPanel } from "./chat";
 import { SettingsPanel } from "./settings";
-import { WelcomeViewProvider } from "./welcome";
 import { AutocompleteProvider, inlineEditSelection, selectionCommand } from "./assistant";
 import { importFromMachine } from "./import";
 import { registerChatProvider } from "./lmProvider";
@@ -12,11 +10,6 @@ let bridge: OpencodeBridge;
 
 export async function activate(context: vscode.ExtensionContext) {
   bridge = new OpencodeBridge();
-
-  // Sidebar launcher
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(WelcomeViewProvider.viewType, new WelcomeViewProvider()),
-  );
 
   // Register opencode as a native language-model provider so VS Code's own chat
   // (Copilot Chat UI, inline chat, terminal chat) can use opencode models.
@@ -28,18 +21,18 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], autocomplete),
   );
 
-  const openChat = () => ChatPanel.createOrShow(context.extensionUri, bridge);
   const openSettings = () => SettingsPanel.createOrShow(context.extensionUri, bridge);
+  // Open VS Code's native chat (where LLMcode models are selectable).
+  const openNativeChat = async () => {
+    await vscode.commands.executeCommand("workbench.action.chat.open");
+  };
 
   // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand("llmcode.open", () => openChat()),
+    vscode.commands.registerCommand("llmcode.open", () => openNativeChat()),
     vscode.commands.registerCommand("llmcode.openSettings", () => openSettings()),
     vscode.commands.registerCommand("llmcode.selectChatModel", () => selectChatModel()),
-    vscode.commands.registerCommand("llmcode.newSession", async () => {
-      const panel = ChatPanel.createOrShow(context.extensionUri, bridge);
-      await panel.newSession();
-    }),
+    vscode.commands.registerCommand("llmcode.newSession", () => openNativeChat()),
     vscode.commands.registerCommand("llmcode.importFromMachine", () => runImport(context)),
     vscode.commands.registerCommand("llmcode.checkInstall", () => checkInstall()),
     vscode.commands.registerCommand("llmcode.installOpencode", () => installOpencode()),
@@ -49,7 +42,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("llmcode.explainSelection", () => selectionCommand(bridge, "explain")),
     vscode.commands.registerCommand("llmcode.fixSelection", () => selectionCommand(bridge, "fix")),
     vscode.commands.registerCommand("llmcode.refactorSelection", () => selectionCommand(bridge, "refactor")),
-    vscode.commands.registerCommand("llmcode.addFileToChat", () => openChat()),
+    vscode.commands.registerCommand("llmcode.addFileToChat", () => openNativeChat()),
   );
 
   // Start the engine and ensure opencode is present. Do NOT block activation —

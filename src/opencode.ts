@@ -258,7 +258,15 @@ export class OpencodeBridge {
     const models: OpenCodeModel[] = [];
     for (const p of providers) {
       for (const [mid, m] of Object.entries(p.models as Record<string, any>)) {
-        models.push({ id: `${p.id}/${mid}`, name: m.name ?? mid, providerID: p.id });
+        models.push({
+          id: `${p.id}/${mid}`,
+          name: m.name ?? mid,
+          providerID: p.id,
+          limit: m.limit ?? undefined,
+          capabilities: m.capabilities
+            ? { toolcall: m.capabilities.toolcall, reasoning: m.capabilities.reasoning, attachment: m.capabilities.attachment }
+            : undefined,
+        });
       }
     }
     return models;

@@ -105,18 +105,6 @@
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "llmcode.open",
-          "when": "view == llmcode.welcome",
-          "group": "navigation"
-        },
-        {
-          "command": "llmcode.openSettings",
-          "when": "view == llmcode.welcome",
-          "group": "navigation"
-        }
-      ],
       "editor/context": [
         {
           "command": "llmcode.inlineEdit",
@@ -141,25 +129,6 @@
         {
           "command": "llmcode.openTerminal",
           "group": "llmcode"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "llmcode",
-          "title": "LLMcode",
-          "icon": "media/llmcode.svg"
-        }
-      ]
-    },
-    "views": {
-      "llmcode": [
-        {
-          "id": "llmcode.welcome",
-          "name": "%view.welcome%",
-          "type": "webview",
-          "contextualTitle": "LLMcode"
         }
       ]
     },

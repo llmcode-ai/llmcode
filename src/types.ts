@@ -21,6 +21,8 @@ export interface OpenCodeModel {
   id: string;
   name?: string;
   providerID: string;
+  limit?: { context?: number; output?: number };
+  capabilities?: { toolcall?: boolean; reasoning?: boolean; attachment?: boolean };
 }
 
 export interface OpenCodeSession {

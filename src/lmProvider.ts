@@ -24,19 +24,22 @@ export class OpencodeChatProvider implements vscode.LanguageModelChatProvider<Mo
   private async ensureModels(): Promise<ModelInfo[]> {
     try {
       const list = await this.bridge.listModels();
-      const maxInput = 128000;
-      const maxOutput = 16000;
-      this.models = list.map((m) => ({
-        id: m.id,
-        name: m.name || m.id,
-        family: m.providerID,
-        version: "1",
-        detail: "opencode",
-        tooltip: l10n.t("opencode model {0}", m.id),
-        maxInputTokens: maxInput,
-        maxOutputTokens: maxOutput,
-        capabilities: { toolCalling: true, imageInput: false },
-      }));
+      this.models = list.map((m) => {
+        // Use the engine's real limits; fall back to a 1M context window.
+        const maxInput = m.limit?.context && m.limit.context > 0 ? m.limit.context : 1000000;
+        const maxOutput = m.limit?.output && m.limit.output > 0 ? m.limit.output : 65536;
+        return {
+          id: m.id,
+          name: m.name || m.id,
+          family: m.providerID,
+          version: "1",
+          detail: `${Math.round(maxInput / 1000)}k context`,
+          tooltip: l10n.t("opencode model {0}", m.id),
+          maxInputTokens: maxInput,
+          maxOutputTokens: maxOutput,
+          capabilities: { toolCalling: m.capabilities?.toolcall ?? true, imageInput: m.capabilities?.attachment ?? false },
+        };
+      });
     } catch {
       this.models = [];
     }
