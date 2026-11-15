@@ -56,4 +56,15 @@ suite("LLMcode Engine Bridge", () => {
     const servers = await bridge.listMcp();
     assert.ok(Array.isArray(servers), "mcp should be an array");
   });
+  test("recovers automatically after the engine dies (fetch failed)", async function () {
+    this.timeout(60000);
+    // Confirm the bridge is connected, then tear down the engine instance to
+    // simulate a crash, and verify the next call transparently restarts it.
+    assert.ok(bridge.isConnected(), "expected connected before kill");
+    await (bridge as any).resetInstance();
+    assert.ok(!bridge.isConnected(), "expected disconnected after reset");
+    const sessions = await bridge.listSessions();
+    assert.ok(Array.isArray(sessions), "listSessions should recover and return an array");
+    assert.ok(bridge.isConnected(), "expected reconnected after automatic restart");
+  });
 });

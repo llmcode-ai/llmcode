@@ -120,7 +120,7 @@ export class OpencodeBridge {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       try {
-        const res = await (await this.client()).app.agents({ query: { directory: this.directory } });
+        const res = await this.call((c) => c.app.agents({ query: { directory: this.directory } }));
         if ((res.data ?? []).length > 0) return;
       } catch {
         // ignore and retry
@@ -129,18 +129,27 @@ export class OpencodeBridge {
     }
   }
 
-  /** Subscribe to engine events and re-emit them for the extension host. */
+  /** Subscribe to engine events and re-emit them for the extension host.
+   *  Reconnects automatically if the stream ends (e.g. after a restart). */
   private async subscribeEvents() {
     if (!this.instance) return;
+    const currentUrl = this.instance.url;
     void (async () => {
-      try {
-        const result: any = await this.instance!.client.global.event();
-        const stream = result?.stream ?? result;
-        for await (const event of stream) {
-          this.emitter.emit("event", event?.data ?? event);
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          const instance = this.instance;
+          if (!instance || instance.url !== currentUrl) return; // instance was replaced
+          const result: any = await instance.client.global.event();
+          const stream = result?.stream ?? result;
+          for await (const event of stream) {
+            this.emitter.emit("event", event?.data ?? event);
+          }
+        } catch (err) {
+          console.warn("[llmcode] event stream ended, will reconnect:", (err as Error).message);
         }
-      } catch (err) {
-        console.warn("[llmcode] event stream ended:", err);
+        // Wait before reconnecting; stop if the instance was replaced or disposed.
+        await new Promise((r) => setTimeout(r, 1500));
+        if (!this.instance || this.instance.url !== currentUrl) return;
       }
     })();
   }
@@ -151,8 +160,56 @@ export class OpencodeBridge {
     return this.instance.client;
   }
 
+  /** True when an error means the managed server process is gone/unreachable. */
+  private static isConnectionError(err: unknown): boolean {
+    const msg = String((err as any)?.message ?? err ?? "").toLowerCase();
+    const cause = String((err as any)?.cause?.code ?? "").toLowerCase();
+    return (
+      msg.includes("fetch failed") ||
+      msg.includes("econnrefused") ||
+      msg.includes("econnreset") ||
+      msg.includes("socket hang up") ||
+      msg.includes("network") ||
+      cause.includes("econnrefused") ||
+      cause.includes("econnreset")
+    );
+  }
+
+  /** Tear down a dead instance so the next call restarts the engine. */
+  private async resetInstance() {
+    if (this.instance) {
+      try {
+        this.instance.close();
+      } catch {
+        // ignore
+      }
+    }
+    this.instance = undefined;
+    this.startPromise = undefined;
+  }
+
+  /**
+   * Run an engine call, transparently recovering from a dead `opencode serve`
+   * process (the common "fetch failed" error). On a connection error the engine
+   * is restarted once and the call is retried, so the user never has to reload
+   * the window.
+   */
+  private async call<T = any>(fn: (client: OpencodeClient) => Promise<T>): Promise<T> {
+    try {
+      return await fn(await this.client());
+    } catch (err) {
+      if (!OpencodeBridge.isConnectionError(err)) throw err;
+      console.warn("[llmcode] engine unreachable, restarting:", (err as Error).message);
+      this.emitter.emit("status", { state: "connecting" } as any);
+      await this.resetInstance();
+      const client = await this.client();
+      this.emitter.emit("status", { state: "idle" } as any);
+      return await fn(client);
+    }
+  }
+
   async listSessions(): Promise<OpenCodeSession[]> {
-    const res = await (await this.client()).session.list({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.session.list({ query: { directory: this.directory } }));
     const sessions = res.data ?? [];
     return sessions.map((s: any) => ({
       id: s.id,
@@ -164,27 +221,27 @@ export class OpencodeBridge {
   }
 
   async createSession(title?: string): Promise<OpenCodeSession> {
-    const res = await (await this.client()).session.create({ query: { directory: this.directory }, body: { title } });
+    const res = await this.call((c) => c.session.create({ query: { directory: this.directory }, body: { title } }));
     const s = res.data!;
     return { id: s.id, title: s.title, createdAt: s.time.created, updatedAt: s.time.updated, archived: false };
   }
 
   async deleteSession(id: string): Promise<void> {
-    await (await this.client()).session.delete({ path: { id }, query: { directory: this.directory } });
+    await this.call((c) => c.session.delete({ path: { id }, query: { directory: this.directory } }));
   }
 
   async forkSession(id: string): Promise<OpenCodeSession> {
-    const res = await (await this.client()).session.fork({ path: { id }, query: { directory: this.directory } });
+    const res = await this.call((c) => c.session.fork({ path: { id }, query: { directory: this.directory } }));
     const s = res.data as any;
     return { id: s.id, title: s.title, createdAt: s.time?.created ?? Date.now(), updatedAt: s.time?.updated ?? Date.now(), archived: false };
   }
 
   async updateSession(id: string, title: string): Promise<void> {
-    await (await this.client()).session.update({ path: { id }, query: { directory: this.directory }, body: { title } });
+    await this.call((c) => c.session.update({ path: { id }, query: { directory: this.directory }, body: { title } }));
   }
 
   async listMessages(id: string) {
-    const res = await (await this.client()).session.messages({ path: { id }, query: { directory: this.directory } });
+    const res = await this.call((c) => c.session.messages({ path: { id }, query: { directory: this.directory } }));
     return res.data ?? [];
   }
 
@@ -199,12 +256,12 @@ export class OpencodeBridge {
       body.model = { providerID, modelID };
     }
     if (opts?.system) body.system = opts.system;
-    const res = await (await this.client()).session.prompt({ path: { id }, query: { directory: this.directory }, body });
+    const res = await this.call((c) => c.session.prompt({ path: { id }, query: { directory: this.directory }, body }));
     return res.data;
   }
 
   async abort(id: string) {
-    await (await this.client()).session.abort({ path: { id }, query: { directory: this.directory } });
+    await this.call((c) => c.session.abort({ path: { id }, query: { directory: this.directory } }));
   }
 
   /**
@@ -229,19 +286,18 @@ export class OpencodeBridge {
     }
     if (opts.system) body.system = opts.system;
 
-    const client = await this.client();
     const query = { directory: this.directory };
 
     // Fire the prompt without blocking, then poll the session: while it is busy
     // the UI shows a live working state; assistant text is emitted as it grows.
-    await client.session.promptAsync({ path: { id }, query, body });
+    await this.call((c) => c.session.promptAsync({ path: { id }, query, body }));
 
     let emitted = "";
     const deadline = Date.now() + 15 * 60 * 1000;
     let sawBusy = false;
     while (Date.now() < deadline) {
       if (opts.signal?.isCancellationRequested) {
-        await client.session.abort({ path: { id }, query }).catch(() => undefined);
+        await this.call((c) => c.session.abort({ path: { id }, query })).catch(() => undefined);
         break;
       }
       await new Promise((r) => setTimeout(r, 350));
@@ -253,8 +309,8 @@ export class OpencodeBridge {
         opts.onDelta(delta);
       }
 
-      const status = await client.session
-        .status?.({ path: { id }, query })
+      const status = await this.client()
+        .then((c) => c.session.status?.({ path: { id }, query }))
         .then((r: any) => r?.data?.[id]?.type)
         .catch(() => undefined);
       if (status === "busy") {
@@ -274,7 +330,7 @@ export class OpencodeBridge {
 
   /** Read the concatenated assistant text for a session from its messages. */
   private async readAssistantText(id: string): Promise<string> {
-    const res = await (await this.client()).session.messages({ path: { id }, query: { directory: this.directory } });
+    const res = await this.call((c) => c.session.messages({ path: { id }, query: { directory: this.directory } }));
     const messages = (res.data ?? []) as any[];
     let text = "";
     for (const m of messages) {
@@ -287,7 +343,7 @@ export class OpencodeBridge {
   }
 
   async listProviders(): Promise<OpenCodeProvider[]> {
-    const res = await (await this.client()).config.providers({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.config.providers({ query: { directory: this.directory } }));
     const payload = res.data as any;
     const providers = payload?.providers ?? [];
     return providers.map((p: any) => ({
@@ -318,7 +374,7 @@ export class OpencodeBridge {
   }
 
   async listAgents(): Promise<OpenCodeAgent[]> {
-    const res = await (await this.client()).app.agents({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.app.agents({ query: { directory: this.directory } }));
     const agents = res.data ?? [];
     return agents.map((a: any) => ({
       name: a.name,
@@ -330,18 +386,18 @@ export class OpencodeBridge {
   }
 
   async listSkills(): Promise<{ name: string; description?: string }[]> {
-    const res = await (await this.client()).command.list({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.command.list({ query: { directory: this.directory } }));
     const commands = res.data ?? [];
     return commands.map((c: any) => ({ name: c.name ?? c.title, description: c.description }));
   }
 
   async listCommands() {
-    const res = await (await this.client()).command.list({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.command.list({ query: { directory: this.directory } }));
     return res.data ?? [];
   }
 
   async listMcp(): Promise<OpenCodeMcpServer[]> {
-    const res = await (await this.client()).mcp.status({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.mcp.status({ query: { directory: this.directory } }));
     const statuses = res.data ?? {};
     return Object.entries(statuses).map(([id, s]: [string, any]) => ({
       id,
@@ -352,11 +408,11 @@ export class OpencodeBridge {
   }
 
   async connectMcp(name: string) {
-    await (await this.client()).mcp.connect({ path: { name }, query: { directory: this.directory } });
+    await this.call((c) => c.mcp.connect({ path: { name }, query: { directory: this.directory } }));
   }
 
   async disconnectMcp(name: string) {
-    await (await this.client()).mcp.disconnect({ path: { name }, query: { directory: this.directory } });
+    await this.call((c) => c.mcp.disconnect({ path: { name }, query: { directory: this.directory } }));
   }
 
   async listPlugins(): Promise<OpenCodePlugin[]> {
@@ -364,12 +420,12 @@ export class OpencodeBridge {
   }
 
   async getConfig(): Promise<OpenCodeConfig> {
-    const res = await (await this.client()).config.get({ query: { directory: this.directory } });
+    const res = await this.call((c) => c.config.get({ query: { directory: this.directory } }));
     return (res.data ?? {}) as OpenCodeConfig;
   }
 
   async updateConfig(config: OpenCodeConfig): Promise<void> {
-    await (await this.client()).config.update({ query: { directory: this.directory }, body: config as any });
+    await this.call((c) => c.config.update({ query: { directory: this.directory }, body: config as any }));
   }
 
   /**
