@@ -1,0 +1,9 @@
+.vscode/**
+.vscode-test/**
+src/**
+**/*.map
+.gitignore
+tsconfig.json
+README.md
+media/llmcode.svg
+package-lock.json**

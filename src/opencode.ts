@@ -1,0 +1,283 @@
+import * as vscode from "vscode";
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import type {
+  OpenCodeAgent,
+  OpenCodeConfig,
+  OpenCodeMcpServer,
+  OpenCodeModel,
+  OpenCodePlugin,
+  OpenCodeProvider,
+  OpenCodeSession,
+} from "./types";
+
+// Dynamic ESM import types for the opencode SDK (ESM-only package in a CJS host).
+type OpencodeClient = any;
+type SDK = { createOpencode: (options?: any) => Promise<{ client: OpencodeClient; server: { url: string; close(): void } }> };
+
+// The opencode engine bridge. Prefers an in-process engine (createOpencode),
+// falling back to `opencode serve` when the SDK cannot start (e.g. missing
+// native deps). All engine calls go through the OpencodeClient.
+
+interface ServerInstance {
+  client: OpencodeClient;
+  url: string;
+  close(): void;
+  directory?: string;
+}
+
+export class OpencodeBridge {
+  private instance: ServerInstance | undefined;
+  private serveProcess: ChildProcess | undefined;
+  private readonly emitter = new EventEmitter();
+  private directory: string | undefined;
+  private connected = false;
+
+  get on() {
+    return this.emitter.on.bind(this.emitter);
+  }
+  get off() {
+    return this.emitter.off.bind(this.emitter);
+  }
+
+  isConnected() {
+    return this.connected;
+  }
+
+  /** Detect whether the opencode CLI is available on PATH. */
+  static async detectCli(): Promise<string | undefined> {
+    const { execFile } = await import("node:child_process");
+    return new Promise((resolve) => {
+      const cmd = process.platform === "win32" ? "where" : "which";
+      const arg = process.platform === "win32" ? "opencode.exe" : "opencode";
+      execFile(process.platform === "win32" ? "where.exe" : "which", [arg], (err, stdout) => {
+        if (err || !stdout) return resolve(undefined);
+        resolve(stdout.trim().split("\n")[0].trim());
+      });
+    });
+  }
+
+  /** Start the engine for a workspace directory. */
+  async start(directory?: string): Promise<void> {
+    this.directory = directory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const apiKey = this.resolveApiKey();
+    const serverConfig: any = {
+      hostname: "127.0.0.1",
+      config: { apiKey } as any,
+    };
+
+    try {
+      const sdk: SDK = (await import("@opencode-ai/sdk")) as any;
+      const created = await sdk.createOpencode(serverConfig);
+      this.instance = { client: created.client, url: created.server.url, close: created.server.close };
+      await this.subscribeEvents();
+      this.connected = true;
+      this.emitter.emit("status", { state: "idle" } as any);
+      return;
+    } catch (err) {
+      console.warn("[llmcode] in-process engine failed, falling back to `opencode serve`:", err);
+    }
+
+    await this.startServe();
+  }
+
+  private async startServe(): Promise<void> {
+    const cmd = vscode.workspace.getConfiguration("llmcode.opencode").get<string>("command") ?? "opencode";
+    const port = vscode.workspace.getConfiguration("llmcode.opencode").get<number>("port") ?? 0;
+    const hostname = vscode.workspace.getConfiguration("llmcode.opencode").get<string>("hostname") ?? "127.0.0.1";
+
+    const args = ["serve", "--hostname", hostname, "--port", String(port)];
+    if (this.directory) args.push("--cwd", this.directory);
+
+    this.serveProcess = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+    this.connected = true;
+    this.emitter.emit("status", { state: "idle" } as any);
+  }
+
+  private resolveApiKey(): string | undefined {
+    return process.env.OPENCODE_API_KEY;
+  }
+
+  /** Subscribe to engine events and re-emit them for the extension host. */
+  private async subscribeEvents() {
+    if (!this.instance) return;
+    try {
+      const stream: any = await this.instance.client.global.event();
+      for await (const event of stream) {
+        this.emitter.emit("event", event.data ?? event);
+      }
+    } catch (err) {
+      console.warn("[llmcode] event stream ended:", err);
+    }
+  }
+
+  private client(): OpencodeClient {
+    if (!this.instance) throw new Error("opencode engine is not running");
+    return this.instance.client;
+  }
+
+  async listSessions(): Promise<OpenCodeSession[]> {
+    const res = await this.client().session.list({ query: { directory: this.directory } });
+    const sessions = res.data ?? [];
+    return sessions.map((s: any) => ({
+      id: s.id,
+      title: s.title,
+      createdAt: s.time.created,
+      updatedAt: s.time.updated,
+      archived: false,
+    }));
+  }
+
+  async createSession(title?: string): Promise<OpenCodeSession> {
+    const res = await this.client().session.create({ query: { directory: this.directory }, body: { title } });
+    const s = res.data!;
+    return { id: s.id, title: s.title, createdAt: s.time.created, updatedAt: s.time.updated, archived: false };
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await this.client().session.delete({ path: { id }, query: { directory: this.directory } });
+  }
+
+  async forkSession(id: string): Promise<OpenCodeSession> {
+    const res = await this.client().session.fork({ path: { id }, query: { directory: this.directory } });
+    const s = res.data as any;
+    return { id: s.id, title: s.title, createdAt: s.time?.created ?? Date.now(), updatedAt: s.time?.updated ?? Date.now(), archived: false };
+  }
+
+  async updateSession(id: string, title: string): Promise<void> {
+    await this.client().session.update({ path: { id }, query: { directory: this.directory }, body: { title } });
+  }
+
+  async listMessages(id: string) {
+    const res = await this.client().session.messages({ path: { id }, query: { directory: this.directory } });
+    return res.data ?? [];
+  }
+
+  /** Send a prompt to a session; returns the full response. */
+  async prompt(id: string, text: string, opts?: { agent?: string; model?: string }): Promise<any> {
+    const body: any = {
+      parts: [{ type: "text", text }],
+    };
+    if (opts?.agent) body.agent = opts.agent;
+    if (opts?.model) {
+      const [providerID, modelID] = opts.model.split("/");
+      body.model = { providerID, modelID };
+    }
+    const res = await this.client().session.prompt({ path: { id }, query: { directory: this.directory }, body });
+    return res.data;
+  }
+
+  async abort(id: string) {
+    await this.client().session.abort({ path: { id }, query: { directory: this.directory } });
+  }
+
+  async listProviders(): Promise<OpenCodeProvider[]> {
+    const res = await this.client().config.providers({ query: { directory: this.directory } });
+    const payload = res.data as any;
+    const providers = payload?.providers ?? [];
+    return providers.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      models: p.models ?? {},
+      options: p.options ?? {},
+    }));
+  }
+
+  async listModels(): Promise<OpenCodeModel[]> {
+    const providers = await this.listProviders();
+    const models: OpenCodeModel[] = [];
+    for (const p of providers) {
+      for (const [mid, m] of Object.entries(p.models as Record<string, any>)) {
+        models.push({ id: `${p.id}/${mid}`, name: m.name ?? mid, providerID: p.id });
+      }
+    }
+    return models;
+  }
+
+  async listAgents(): Promise<OpenCodeAgent[]> {
+    const res = await this.client().app.agents({ query: { directory: this.directory } });
+    const agents = res.data ?? [];
+    return agents.map((a: any) => ({
+      name: a.name,
+      mode: a.mode as OpenCodeAgent["mode"],
+      description: a.description,
+      model: a.model ? `${a.model.providerID}/${a.model.modelID}` : undefined,
+      prompt: a.prompt,
+    }));
+  }
+
+  async listSkills(): Promise<{ name: string; description?: string }[]> {
+    const res = await this.client().command.list({ query: { directory: this.directory } });
+    const commands = res.data ?? [];
+    return commands.map((c: any) => ({ name: c.name ?? c.title, description: c.description }));
+  }
+
+  async listCommands() {
+    const res = await this.client().command.list({ query: { directory: this.directory } });
+    return res.data ?? [];
+  }
+
+  async listMcp(): Promise<OpenCodeMcpServer[]> {
+    const res = await this.client().mcp.status({ query: { directory: this.directory } });
+    const statuses = res.data ?? {};
+    return Object.entries(statuses).map(([id, s]: [string, any]) => ({
+      id,
+      type: "local",
+      enabled: s.status !== "disabled",
+      status: s.status === "connected" ? "connected" : s.status === "disabled" ? "disabled" : "disconnected",
+    }));
+  }
+
+  async connectMcp(name: string) {
+    await this.client().mcp.connect({ path: { name }, query: { directory: this.directory } });
+  }
+
+  async disconnectMcp(name: string) {
+    await this.client().mcp.disconnect({ path: { name }, query: { directory: this.directory } });
+  }
+
+  async listPlugins(): Promise<OpenCodePlugin[]> {
+    return [];
+  }
+
+  async getConfig(): Promise<OpenCodeConfig> {
+    const res = await this.client().config.get({ query: { directory: this.directory } });
+    return (res.data ?? {}) as OpenCodeConfig;
+  }
+
+  async updateConfig(config: OpenCodeConfig): Promise<void> {
+    await this.client().config.update({ query: { directory: this.directory }, body: config as any });
+  }
+
+  /**
+   * Raw text generation for autocomplete/inline edits. The v1 engine has no
+   * dedicated generate endpoint, so we run a throwaway session prompt and
+   * read back the concatenated text parts.
+   */
+  async generateText(prompt: string, model?: string): Promise<string> {
+    const session = await this.createSession("_generate");
+    try {
+      const res: any = await this.prompt(session.id, prompt, { model });
+      const parts = res?.parts ?? [];
+      return parts
+        .filter((p: any) => p.type === "text")
+        .map((p: any) => p.text)
+        .join("");
+    } finally {
+      await this.deleteSession(session.id).catch(() => undefined);
+    }
+  }
+
+  async dispose() {
+    if (this.instance) {
+      this.instance.close();
+      this.instance = undefined;
+    }
+    if (this.serveProcess) {
+      this.serveProcess.kill();
+      this.serveProcess = undefined;
+    }
+    this.connected = false;
+  }
+}
