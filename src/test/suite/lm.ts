@@ -59,6 +59,11 @@ suite("LLMcode Language Model Provider", () => {
       await new Promise((r) => setTimeout(r, 400));
     } while (Date.now() < deadline);
     assert.ok(models.length > 0, "expected opencode models via lm.selectChatModels({ vendor: 'llmcode' })");
+    const ids = models.map((m) => m.id);
+    assert.ok(
+      ids.some((id) => id.includes("/")),
+      `expected provider/model style ids, got: ${ids.slice(0, 5).join(", ")}`,
+    );
   });
 
   test("streams a response from opencode through the provider", async function () {
