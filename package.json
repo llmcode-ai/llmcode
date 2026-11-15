@@ -58,6 +58,11 @@
         "icon": "$(gear)"
       },
       {
+        "command": "llmcode.pickModel",
+        "title": "%command.pickModel%",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "llmcode.selectChatModel",
         "title": "%command.selectChatModel%",
         "icon": "$(symbol-misc)"

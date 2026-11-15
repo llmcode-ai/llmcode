@@ -25,5 +25,6 @@
   "chatParticipant.description": "Chat with the opencode engine",
   "command.useLocalAgent": "LLMcode: Use Local Agent by Default",
   "command.showLastModel": "LLMcode: Show Model Log (which model answered)",
-  "command.takeoverInline": "LLMcode: Take Over Inline Suggestions (disable Copilot autocomplete)"
+  "command.takeoverInline": "LLMcode: Take Over Inline Suggestions (disable Copilot autocomplete)",
+  "command.pickModel": "LLMcode: Choose Model"
 }

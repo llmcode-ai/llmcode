@@ -16,10 +16,20 @@ export function initAssistantUi(context: vscode.ExtensionContext) {
   output = vscode.window.createOutputChannel("LLMcode");
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBar.name = "LLMcode";
-  statusBar.command = "llmcode.showLastModel";
-  statusBar.text = "$(sparkle) LLMcode";
-  statusBar.tooltip = l10n.t("LLMcode: last model used (click to view log)");
+  statusBar.command = "llmcode.pickModel";
+  const configured = vscode.workspace.getConfiguration("llmcode.autocomplete").get<string>("model", "");
+  statusBar.text = `$(sparkle) ${configured && configured.trim() ? configured.trim() : "LLMcode"}`;
+  statusBar.tooltip = l10n.t("LLMcode: click to choose the model");
   statusBar.show();
+  // Keep the label in sync when the setting changes.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("llmcode.autocomplete.model") && statusBar) {
+        const m = vscode.workspace.getConfiguration("llmcode.autocomplete").get<string>("model", "");
+        statusBar.text = `$(sparkle) ${m && m.trim() ? m.trim() : "LLMcode"}`;
+      }
+    }),
+  );
   context.subscriptions.push(output, statusBar);
 }
 
@@ -27,9 +37,44 @@ function logModel(kind: string, requested: string | undefined, actual: string | 
   const line = `[${new Date().toISOString()}] ${kind}: requested=${requested || "(default)"} actual=${actual || "unknown"}`;
   output?.appendLine(line);
   if (statusBar) {
-    statusBar.text = `$(sparkle) ${actual || "LLMcode"}`;
-    statusBar.tooltip = l10n.t("Last {0} model: {1}", kind, actual || "unknown");
+    const shown = resolveModel() || actual;
+    statusBar.text = `$(sparkle) ${shown || "LLMcode"}`;
+    statusBar.tooltip = l10n.t("LLMcode model: {0} (last {1})", shown || "default", kind);
   }
+}
+
+
+/** Show a picker of opencode models and set it for autocomplete. */
+export async function pickModel(bridge: OpencodeBridge): Promise<void> {
+  let models: { id: string; name?: string; providerID: string }[] = [];
+  try {
+    models = await bridge.listModels();
+  } catch (err) {
+    vscode.window.showErrorMessage(l10n.t("Could not list models: {0}", (err as Error).message));
+    return;
+  }
+  if (!models.length) {
+    vscode.window.showWarningMessage(l10n.t("No models available. Is the opencode engine running?"));
+    return;
+  }
+  const cfg = vscode.workspace.getConfiguration("llmcode.autocomplete");
+  const current = cfg.get<string>("model", "");
+  const items: (vscode.QuickPickItem & { id: string })[] = models.map((m) => ({
+    id: m.id,
+    label: (m.id === current ? "$(check) " : "$(circle-outline) ") + (m.name || m.id),
+    description: m.id === current ? l10n.t("current") : m.providerID,
+    detail: m.id,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: l10n.t("Choose the model LLMcode uses for autocomplete and edits"),
+    matchOnDetail: true,
+  });
+  if (!picked) return;
+  await cfg.update("model", picked.id, vscode.ConfigurationTarget.Global);
+  // Also point the native chat default at it for consistency.
+  await vscode.workspace.getConfiguration("chat").update("defaultModel", picked.id, vscode.ConfigurationTarget.Global);
+  if (statusBar) statusBar.text = `$(sparkle) ${picked.id}`;
+  vscode.window.showInformationMessage(l10n.t("LLMcode model set to {0}", picked.id));
 }
 
 /** Resolve the model to use: explicit autocomplete model, else chat default. */
@@ -47,7 +92,7 @@ const MAX_SUFFIX = 800;
 
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
   private timer: NodeJS.Timeout | undefined;
-  private busy = false;
+  private inflight: vscode.CancellationTokenSource | undefined;
 
   constructor(private readonly bridge: OpencodeBridge) {}
 
@@ -59,25 +104,38 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   ): vscode.ProviderResult<vscode.InlineCompletionItem[] | vscode.InlineCompletionList> {
     const cfg = vscode.workspace.getConfiguration("llmcode.autocomplete");
     if (!cfg.get<boolean>("enabled", true)) return undefined;
-    if (context.triggerKind === vscode.InlineCompletionTriggerKind.Automatic && !this.shouldTrigger(document, position)) {
-      return undefined;
-    }
+    if (!this.shouldTrigger(document, position, context)) return undefined;
+
+    // Cancel any in-flight request and schedule a new one after the debounce.
+    this.inflight?.cancel();
+    if (this.timer) clearTimeout(this.timer);
+    const cts = new vscode.CancellationTokenSource();
+    this.inflight = cts;
 
     return new Promise((resolve) => {
-      if (this.timer) clearTimeout(this.timer);
       this.timer = setTimeout(async () => {
-        if (token.isCancellationRequested) return resolve(undefined);
-        const items = await this.complete(document, position, token);
+        if (token.isCancellationRequested || cts.token.isCancellationRequested) return resolve(undefined);
+        const items = await this.complete(document, position, cts.token);
         resolve(items);
       }, DEBOUNCE_MS);
     });
   }
 
-  private shouldTrigger(document: vscode.TextDocument, position: vscode.Position): boolean {
+  private shouldTrigger(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    context: vscode.InlineCompletionContext,
+  ): boolean {
+    // Explicit invocation (Ctrl+Space) always triggers.
+    if (context.triggerKind === vscode.InlineCompletionTriggerKind.Invoke) return true;
     const line = document.lineAt(position.line).text;
     const before = line.slice(0, position.character);
-    // Require at least some content and no trailing whitespace mid-word.
-    return before.trim().length > 0;
+    // Only suggest when there is code before the cursor and we are not inside a
+    // pure-comment line start or whitespace-only context.
+    if (before.trim().length === 0) return false;
+    // Don't trigger right after a completed statement with only punctuation.
+    if (/[;{}]\s*$/.test(before)) return false;
+    return true;
   }
 
   private async complete(
@@ -85,8 +143,6 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     position: vscode.Position,
     token: vscode.CancellationToken,
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
-    if (this.busy) return undefined;
-    this.busy = true;
     try {
       const text = document.getText();
       const offset = document.offsetAt(position);
@@ -110,12 +166,12 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       const cleaned = this.cleanCompletion(completion, suffix, prefix);
       if (!cleaned) return undefined;
 
-      return [new vscode.InlineCompletionItem(cleaned, undefined)];
+      // Insert at the cursor; the range must be present for ghost text to insert.
+      const range = new vscode.Range(position, position);
+      return [new vscode.InlineCompletionItem(cleaned, range)];
     } catch (err) {
       console.warn("[llmcode] autocomplete error:", err);
       return undefined;
-    } finally {
-      this.busy = false;
     }
   }
 
