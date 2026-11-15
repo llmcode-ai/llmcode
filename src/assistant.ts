@@ -101,8 +101,8 @@ function resolveModel(): string | undefined {
 }
 
 const DEBOUNCE_MS = 300;
-const MAX_PREFIX = 2000;
-const MAX_SUFFIX = 800;
+const MAX_PREFIX = 800;
+const MAX_SUFFIX = 400;
 
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
   private lastFire = 0;
@@ -197,7 +197,13 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       const system =
         "You are a code completion engine. Continue the given code by outputting ONLY the exact characters to insert at the cursor. No explanations, no markdown, no commentary, no questions. Never write prose or Russian text.";
       // Engine call with tools disabled: reliable, constrained, no chatter.
-      const r = await this.bridge.generateText(prompt, model || undefined, system, true);
+      // Hard timeout so a slow/looping engine call cannot wedge autocomplete.
+      const r = await Promise.race([
+        this.bridge.generateText(prompt, model || undefined, system, { noTools: true, agent: "title" }),
+        new Promise<{ text: string; model?: string }>((resolve) =>
+          setTimeout(() => resolve({ text: "", model: undefined }), 9000),
+        ),
+      ]);
       const completion = r.text;
       const actual = r.model;
       logModel("autocomplete", model || undefined, actual);
@@ -228,8 +234,11 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
 
   private cleanCompletion(completion: string, suffix: string, prefix: string): string {
     let out = completion.trim();
-    // Strip a leading language fence (```python) and any trailing fence.
+    // Strip code fences, and markdown-style inline-code wrapping (`` `...` ``),
+    // and a leading dot that the model sometimes adds before a continuation.
     out = out.replace(/^```[a-zA-Z0-9+]*\s*\n?/, "").replace(/```\s*$/, "");
+    out = out.replace(/^`([^`]*)`$/, "$1");
+    out = out.replace(/^[`"'\s]+/, "");
 
     const outLines = out.split("\n");
     const prefixTrimmed = prefix.replace(/\s+$/, "");

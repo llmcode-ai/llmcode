@@ -516,10 +516,20 @@ export class OpencodeBridge {
    * prompts, producing off-topic answers). The engine keeps the provider warm,
    * so fresh sessions are still fast after the first call.
    */
-  async generateText(prompt: string, model?: string, system?: string, noTools = false): Promise<{ text: string; model?: string }> {
+  async generateText(
+    prompt: string,
+    model?: string,
+    system?: string,
+    opts?: { noTools?: boolean; agent?: string },
+  ): Promise<{ text: string; model?: string }> {
     const session = await this.createSession("_generate");
     try {
-      const res: any = await this.prompt(session.id, prompt, { model, system, noTools });
+      const res: any = await this.prompt(session.id, prompt, {
+        model,
+        system,
+        noTools: opts?.noTools,
+        agent: opts?.agent,
+      });
       const parts = res?.parts ?? [];
       const text = parts
         .filter((p: any) => p.type === "text")
