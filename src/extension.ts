@@ -61,7 +61,51 @@ export async function activate(context: vscode.ExtensionContext) {
   bridge.on("status", () => chatProvider.refresh());
   void ensureOpencode();
 
+  // Apply the recommended configuration once, automatically, on first install.
+  void applyDefaultSettings(context);
+
   return bridge;
+}
+
+const SETTINGS_APPLIED_KEY = "llmcode.settingsApplied.v1";
+
+/**
+ * Apply the settings that make LLMcode work out of the box, once per install.
+ * These are the switches that route VS Code's chat and inline suggestions
+ * through opencode and stop Copilot from consuming credits.
+ */
+async function applyDefaultSettings(context: vscode.ExtensionContext) {
+  if (context.globalState.get<boolean>(SETTINGS_APPLIED_KEY)) return;
+  const g = vscode.ConfigurationTarget.Global;
+  const chat = vscode.workspace.getConfiguration("chat");
+  const copilot = vscode.workspace.getConfiguration("github.copilot");
+  const editor = vscode.workspace.getConfiguration("editor");
+  const llm = vscode.workspace.getConfiguration("llmcode");
+  // Apply each setting independently so one unavailable section (e.g. Copilot
+  // not installed) never blocks the rest.
+  const set = async (section: vscode.WorkspaceConfiguration, key: string, value: unknown) => {
+    try {
+      await section.update(key, value, g);
+    } catch (err) {
+      console.warn(`[llmcode] could not set ${key}:`, err);
+    }
+  };
+  // Turn off Copilot's inline suggestions so typing doesn't spend credits.
+  await set(copilot, "enable", { "*": false });
+  await set(copilot, "inlineEditsEnabled", false);
+  await set(copilot, "nextEditSuggestions.enabled", false);
+  // Ensure ghost text is enabled (LLMcode provides it).
+  await set(editor, "inlineSuggest.enabled", true);
+  await set(editor, "inlineSuggest.showToolbar", "always");
+  // Default the Agents window to Local (not Copilot) and include BYOK models.
+  await set(chat, "defaultToCopilotHarness", false);
+  await set(chat, "editor.preferCopilotHarness", false);
+  await set(chat, "editor.localAgent.enabled", true);
+  await set(chat, "agentHost.byokModels.enabled", true);
+  await set(chat, "copilot.modelRouter.enabled", false);
+  // LLMcode autocomplete on by default.
+  await set(llm, "autocomplete.enabled", true);
+  await context.globalState.update(SETTINGS_APPLIED_KEY, true);
 }
 
 
@@ -110,8 +154,26 @@ async function ensureOpencode() {
   }
   try {
     await bridge.start();
+    await autoPickFastModel();
   } catch (err) {
     vscode.window.showErrorMessage(l10n.t("LLMcode: failed to start opencode engine: {0}", (err as Error).message));
+  }
+}
+
+/** If no autocomplete model is configured, pick a fast one automatically. */
+async function autoPickFastModel() {
+  const cfg = vscode.workspace.getConfiguration("llmcode.autocomplete");
+  if ((cfg.get<string>("model", "") || "").trim()) return;
+  try {
+    const models = await bridge.listModels();
+    if (!models.length) return;
+    // Prefer a model whose name hints at being fast/cheap for autocomplete, but
+    // work with whatever is available (any provider/model).
+    const looksFast = (id: string, name?: string) => /(flash|mini|small|fast|haiku|luna|instant|turbo|lite|nano)/i.test(`${id} ${name ?? ""}`);
+    const pick = (models.find((m) => looksFast(m.id, m.name)) ?? models[0]).id;
+    await cfg.update("model", pick, vscode.ConfigurationTarget.Global);
+  } catch {
+    // best-effort
   }
 }
 
