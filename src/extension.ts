@@ -116,6 +116,27 @@ async function ensureOpencode() {
 }
 
 async function installOpencode() {
+  // On Windows, opencode may already exist inside WSL. Prefer that over
+  // installing a separate Windows copy.
+  if (process.platform === "win32") {
+    const wslHas = await OpencodeBridge.detectWsl();
+    const installedOnWindows = !!(await OpencodeBridge.detectCli());
+    if (wslHas && !installedOnWindows) {
+      const useWsl = l10n.t("Use WSL opencode");
+      const installWindows = l10n.t("Install on Windows");
+      const choice = await vscode.window.showInformationMessage(
+        l10n.t("opencode is available inside WSL. Use that instead of installing on Windows?"),
+        useWsl,
+        installWindows,
+      );
+      if (choice === useWsl) {
+        vscode.window.showInformationMessage(
+          l10n.t("Using opencode from WSL. Reload the window. If the extension runs on Windows, enable the WSL remote or install opencode on Windows too."),
+        );
+        return;
+      }
+    }
+  }
   const terminal = vscode.window.createTerminal({ name: "opencode", env: { OPENCODE_CALLER: "vscode" } });
   terminal.show();
   if (process.platform === "win32") {

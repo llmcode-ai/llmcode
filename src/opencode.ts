@@ -63,11 +63,32 @@ export class OpencodeBridge {
   /** Detect whether the opencode CLI is available on PATH. */
   static async detectCli(): Promise<string | undefined> {
     const { execFile } = await import("node:child_process");
+    const run = (cmd: string, args: string[]): Promise<string | undefined> =>
+      new Promise((resolve) => {
+        execFile(cmd, args, (err, stdout) => {
+          if (err || !stdout) return resolve(undefined);
+          resolve(stdout.trim().split("\n")[0].trim());
+        });
+      });
+    const arg = process.platform === "win32" ? "opencode.exe" : "opencode";
+    const which = await run(process.platform === "win32" ? "where.exe" : "which", [arg]);
+    if (which) return which;
+    // On Windows, opencode may only be installed inside WSL. Detect it there so
+    // we don't install a second copy on Windows unnecessarily.
+    if (process.platform === "win32") {
+      const wsl = await run("wsl.exe", ["--", "sh", "-lc", "command -v opencode"]);
+      if (wsl) return wsl;
+    }
+    return undefined;
+  }
+
+  /** Check whether opencode is available inside a WSL distribution (Windows). */
+  static async detectWsl(): Promise<boolean> {
+    if (process.platform !== "win32") return false;
+    const { execFile } = await import("node:child_process");
     return new Promise((resolve) => {
-      const arg = process.platform === "win32" ? "opencode.exe" : "opencode";
-      execFile(process.platform === "win32" ? "where.exe" : "which", [arg], (err, stdout) => {
-        if (err || !stdout) return resolve(undefined);
-        resolve(stdout.trim().split("\n")[0].trim());
+      execFile("wsl.exe", ["--", "sh", "-lc", "command -v opencode"], (err, stdout) => {
+        resolve(!err && !!stdout && stdout.trim().length > 0);
       });
     });
   }
@@ -246,7 +267,7 @@ export class OpencodeBridge {
   }
 
   /** Send a prompt to a session; returns the full response. */
-  async prompt(id: string, text: string, opts?: { agent?: string; model?: string; system?: string }): Promise<any> {
+  async prompt(id: string, text: string, opts?: { agent?: string; model?: string; system?: string; noTools?: boolean }): Promise<any> {
     const body: any = {
       parts: [{ type: "text", text }],
     };
@@ -256,6 +277,7 @@ export class OpencodeBridge {
       body.model = { providerID, modelID };
     }
     if (opts?.system) body.system = opts.system;
+    if (opts?.noTools) body.tools = {};
     const res = await this.call((c) => c.session.prompt({ path: { id }, query: { directory: this.directory }, body }));
     return res.data;
   }
@@ -443,10 +465,10 @@ export class OpencodeBridge {
    * prompts, producing off-topic answers). The engine keeps the provider warm,
    * so fresh sessions are still fast after the first call.
    */
-  async generateText(prompt: string, model?: string, system?: string): Promise<{ text: string; model?: string }> {
+  async generateText(prompt: string, model?: string, system?: string, noTools = false): Promise<{ text: string; model?: string }> {
     const session = await this.createSession("_generate");
     try {
-      const res: any = await this.prompt(session.id, prompt, { model, system });
+      const res: any = await this.prompt(session.id, prompt, { model, system, noTools });
       const parts = res?.parts ?? [];
       const text = parts
         .filter((p: any) => p.type === "text")

@@ -194,11 +194,12 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       if (token.isCancellationRequested) return undefined;
 
       const model = resolveModel();
-      const { text: completion, model: actual } = await this.bridge.generateText(
-        prompt,
-        model || undefined,
-        "You are a code completion engine. Output ONLY the exact code to insert at the cursor, nothing else. No explanations, no markdown, no conversation. Never answer questions or discuss anything — just continue the code.",
-      );
+      const system =
+        "You are a code completion engine. Continue the given code by outputting ONLY the exact characters to insert at the cursor. No explanations, no markdown, no commentary, no questions. Never write prose or Russian text.";
+      // Engine call with tools disabled: reliable, constrained, no chatter.
+      const r = await this.bridge.generateText(prompt, model || undefined, system, true);
+      const completion = r.text;
+      const actual = r.model;
       logModel("autocomplete", model || undefined, actual);
       if (token.isCancellationRequested) return undefined;
       if (!completion || !completion.trim()) return undefined;
@@ -218,18 +219,11 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   }
 
   private buildFimPrompt(language: string, prefix: string, suffix: string): string {
-    // Concise fill-in-the-middle prompt. Shorter prompt = faster response.
+    // For a raw completion model: give the code up to the cursor, and (if any)
+    // a note about what follows so it does not duplicate the suffix.
     const hasSuffix = suffix.trim().length > 0;
-    return [
-      `Continue the ${language} code at the cursor. Output ONLY the code to insert — no fences, no explanation.`,
-      hasSuffix ? `The code after the cursor is shown after <after>; do not repeat it.` : ``,
-      `--- before ---`,
-      prefix,
-      `--- insert here ---`,
-      hasSuffix ? `--- after ---\n${suffix}\n--- end after ---` : ``,
-    ]
-      .filter((l) => l !== ``)
-      .join("\n");
+    if (!hasSuffix) return prefix;
+    return `${prefix}\n// (the code after the cursor: ${JSON.stringify(suffix.slice(0, 80))} — do not repeat it)`;
   }
 
   private cleanCompletion(completion: string, suffix: string, prefix: string): string {

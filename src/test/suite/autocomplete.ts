@@ -21,6 +21,10 @@ suite("LLMcode Autocomplete Provider", () => {
 
   test("returns an inline completion for code at the cursor", async function () {
     this.timeout(90000);
+    // Use a fast model that supports direct completion.
+    await vscode.workspace
+      .getConfiguration("llmcode.autocomplete")
+      .update("model", "deepseek/deepseek-flash", vscode.ConfigurationTarget.Global);
     // Real, unsaved document with an incomplete statement and cursor at the end.
     const doc = await vscode.workspace.openTextDocument({ language: "javascript", content: "function sum(a) {\n  return " });
     const editor = await vscode.window.showTextDocument(doc);
