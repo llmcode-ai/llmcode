@@ -100,13 +100,13 @@ function resolveModel(): string | undefined {
   return undefined;
 }
 
-const DEBOUNCE_MS = 200;
+const DEBOUNCE_MS = 300;
 const MAX_PREFIX = 2000;
 const MAX_SUFFIX = 800;
 
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
-  private timer: NodeJS.Timeout | undefined;
-  private inflight: vscode.CancellationTokenSource | undefined;
+  private lastFire = 0;
+  private running: { position: vscode.Position; promise: Promise<vscode.InlineCompletionItem[] | undefined> } | undefined;
 
   constructor(private readonly bridge: OpencodeBridge) {}
 
@@ -119,21 +119,46 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     const cfg = vscode.workspace.getConfiguration("llmcode.autocomplete");
     if (!cfg.get<boolean>("enabled", true)) { debugLog("skip: disabled"); return undefined; }
     if (!this.shouldTrigger(document, position, context)) { debugLog("skip: trigger"); return undefined; }
-    debugLog(`trigger at ${position.line}:${position.character} kind=${context.triggerKind}`);
 
-    // Cancel any in-flight request and schedule a new one after the debounce.
-    this.inflight?.cancel();
-    if (this.timer) clearTimeout(this.timer);
+    const invoke = context.triggerKind === vscode.InlineCompletionTriggerKind.Invoke;
+    const now = Date.now();
+
+    // If a generation is already running, don't cancel it (that was why rapid
+    // typing produced nothing). Reuse its result when the cursor is still on the
+    // same line; otherwise wait for it and start fresh afterwards.
+    if (this.running) {
+      if (this.running.position.line === position.line) {
+        debugLog("reuse running request");
+        return this.running.promise;
+      }
+      const prev = this.running.promise;
+      debugLog("queue behind running request");
+      return prev.then(() => this.fire(document, position, invoke, token));
+    }
+
+    // Throttle automatic triggers; explicit Invoke is never throttled.
+    if (!invoke && now - this.lastFire < DEBOUNCE_MS) {
+      debugLog("skip: throttle");
+      return undefined;
+    }
+    return this.fire(document, position, invoke, token);
+  }
+
+  private fire(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    invoke: boolean,
+    token: vscode.CancellationToken,
+  ): Promise<vscode.InlineCompletionItem[] | undefined> {
+    this.lastFire = Date.now();
+    debugLog(`fire at ${position.line}:${position.character} invoke=${invoke}`);
+    // No internal cancellation: let the request finish so a result is produced.
     const cts = new vscode.CancellationTokenSource();
-    this.inflight = cts;
-
-    return new Promise((resolve) => {
-      this.timer = setTimeout(async () => {
-        if (token.isCancellationRequested || cts.token.isCancellationRequested) return resolve(undefined);
-        const items = await this.complete(document, position, cts.token);
-        resolve(items);
-      }, DEBOUNCE_MS);
+    const promise = this.complete(document, position, cts.token).finally(() => {
+      if (this.running && this.running.promise === promise) this.running = undefined;
     });
+    this.running = { position, promise };
+    return promise;
   }
 
   private shouldTrigger(
