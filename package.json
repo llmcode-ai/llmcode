@@ -63,6 +63,10 @@
         "icon": "$(symbol-misc)"
       },
       {
+        "command": "llmcode.useLocalAgent",
+        "title": "%command.useLocalAgent%"
+      },
+      {
         "command": "llmcode.importFromMachine",
         "title": "%command.importFromMachine%",
         "icon": "$(cloud-download)"

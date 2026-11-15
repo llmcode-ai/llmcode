@@ -66,6 +66,16 @@ On startup, if no `chat.defaultModel` is set, LLMcode sets it to an opencode mod
 "chat.defaultModel": "abliteration/opus-5.5"
 ```
 
+To make the Agents window default to the **Local** harness instead of Copilot:
+
+```json
+"chat.defaultToCopilotHarness": false,
+"chat.editor.preferCopilotHarness": false,
+"chat.editor.localAgent.enabled": true
+```
+
+Or run **LLMcode: Use Local Agent by Default** (sets all three for you).
+
 To stop Copilot's model router from auto-selecting a Copilot model over your choice:
 
 ```json

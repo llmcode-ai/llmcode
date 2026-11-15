@@ -36,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("llmcode.open", () => openNativeChat()),
     vscode.commands.registerCommand("llmcode.openSettings", () => openSettings()),
     vscode.commands.registerCommand("llmcode.selectChatModel", () => selectChatModel()),
+    vscode.commands.registerCommand("llmcode.useLocalAgent", () => useLocalAgentByDefault()),
     vscode.commands.registerCommand("llmcode.newSession", () => openNativeChat()),
     vscode.commands.registerCommand("llmcode.importFromMachine", () => runImport(context)),
     vscode.commands.registerCommand("llmcode.checkInstall", () => checkInstall()),
@@ -57,6 +58,17 @@ export async function activate(context: vscode.ExtensionContext) {
   return bridge;
 }
 
+
+async function useLocalAgentByDefault() {
+  // Make VS Code's Agents window default to the Local harness (not Copilot).
+  const chat = vscode.workspace.getConfiguration("chat");
+  await chat.update("defaultToCopilotHarness", false, vscode.ConfigurationTarget.Global);
+  await chat.update("editor.preferCopilotHarness", false, vscode.ConfigurationTarget.Global);
+  await chat.update("editor.localAgent.enabled", true, vscode.ConfigurationTarget.Global);
+  vscode.window.showInformationMessage(
+    l10n.t("The Agents window now defaults to Local. Pick an LLMcode (opencode) model in the model picker."),
+  );
+}
 
 async function selectChatModel() {
   // Open VS Code's native chat model picker so the user can select an LLMcode
