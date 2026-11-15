@@ -16,7 +16,6 @@ let bridge: OpencodeBridge;
 
 export async function activate(context: vscode.ExtensionContext) {
   bridge = new OpencodeBridge();
-
   // Chat view (Mode A)
   const chatProvider = new ChatViewProvider(bridge);
   context.subscriptions.push(
@@ -70,15 +69,17 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("llmcode.addFileToChat", () => openChat()),
   );
 
-  // Start the engine and ensure opencode is present.
-  await ensureOpencode();
+  // Start the engine and ensure opencode is present. Do NOT block activation —
+  // the engine boots in the background and the chat surface updates when ready.
+  void ensureOpencode();
+
+  // Expose the bridge for tests and potential future consumers.
+  return bridge;
 }
 
 async function ensureOpencode() {
   const cli = await OpencodeBridge.detectCli();
-  if (cli) {
-    await bridge.start();
-  } else {
+  if (!cli) {
     const action = await vscode.window.showWarningMessage(
       "opencode is not installed. It is required for LLMcode. Install it now?",
       "Install",
@@ -87,6 +88,12 @@ async function ensureOpencode() {
     if (action === "Install") {
       await installOpencode();
     }
+    return;
+  }
+  try {
+    await bridge.start();
+  } catch (err) {
+    vscode.window.showErrorMessage(`LLMcode: failed to start opencode engine: ${(err as Error).message}`);
   }
 }
 

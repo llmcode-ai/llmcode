@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type {
   OpenCodeAgent,
@@ -13,11 +12,14 @@ import type {
 
 // Dynamic ESM import types for the opencode SDK (ESM-only package in a CJS host).
 type OpencodeClient = any;
-type SDK = { createOpencode: (options?: any) => Promise<{ client: OpencodeClient; server: { url: string; close(): void } }> };
+type SDK = {
+  createOpencode: (options?: any) => Promise<{ client: OpencodeClient; server: { url: string; close(): void } }>;
+  createOpencodeClient: (config?: any) => OpencodeClient;
+};
 
-// The opencode engine bridge. Prefers an in-process engine (createOpencode),
-// falling back to `opencode serve` when the SDK cannot start (e.g. missing
-// native deps). All engine calls go through the OpencodeClient.
+// The opencode engine bridge. Uses the official SDK, which spawns a managed
+// `opencode serve` child process and returns a client pointed at it. All engine
+// calls go through the OpencodeClient (REST + SSE).
 
 interface ServerInstance {
   client: OpencodeClient;
@@ -28,10 +30,8 @@ interface ServerInstance {
 
 export class OpencodeBridge {
   private instance: ServerInstance | undefined;
-  private serveProcess: ChildProcess | undefined;
   private readonly emitter = new EventEmitter();
   private directory: string | undefined;
-  private connected = false;
 
   get on() {
     return this.emitter.on.bind(this.emitter);
@@ -41,14 +41,13 @@ export class OpencodeBridge {
   }
 
   isConnected() {
-    return this.connected;
+    return this.instance !== undefined;
   }
 
   /** Detect whether the opencode CLI is available on PATH. */
   static async detectCli(): Promise<string | undefined> {
     const { execFile } = await import("node:child_process");
     return new Promise((resolve) => {
-      const cmd = process.platform === "win32" ? "where" : "which";
       const arg = process.platform === "win32" ? "opencode.exe" : "opencode";
       execFile(process.platform === "win32" ? "where.exe" : "which", [arg], (err, stdout) => {
         if (err || !stdout) return resolve(undefined);
@@ -60,56 +59,35 @@ export class OpencodeBridge {
   /** Start the engine for a workspace directory. */
   async start(directory?: string): Promise<void> {
     this.directory = directory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const apiKey = this.resolveApiKey();
-    const serverConfig: any = {
-      hostname: "127.0.0.1",
-      config: { apiKey } as any,
-    };
+    const cfg = vscode.workspace.getConfiguration("llmcode.opencode");
+    const port = cfg.get<number>("port", 0);
+    const hostname = cfg.get<string>("hostname", "127.0.0.1");
 
-    try {
-      const sdk: SDK = (await import("@opencode-ai/sdk")) as any;
-      const created = await sdk.createOpencode(serverConfig);
-      this.instance = { client: created.client, url: created.server.url, close: created.server.close };
-      await this.subscribeEvents();
-      this.connected = true;
-      this.emitter.emit("status", { state: "idle" } as any);
-      return;
-    } catch (err) {
-      console.warn("[llmcode] in-process engine failed, falling back to `opencode serve`:", err);
-    }
-
-    await this.startServe();
-  }
-
-  private async startServe(): Promise<void> {
-    const cmd = vscode.workspace.getConfiguration("llmcode.opencode").get<string>("command") ?? "opencode";
-    const port = vscode.workspace.getConfiguration("llmcode.opencode").get<number>("port") ?? 0;
-    const hostname = vscode.workspace.getConfiguration("llmcode.opencode").get<string>("hostname") ?? "127.0.0.1";
-
-    const args = ["serve", "--hostname", hostname, "--port", String(port)];
-    if (this.directory) args.push("--cwd", this.directory);
-
-    this.serveProcess = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-    this.connected = true;
+    const sdk: SDK = (await import("@opencode-ai/sdk")) as any;
+    const created = await sdk.createOpencode({
+      hostname,
+      port: port === 0 ? 4096 : port,
+      config: {},
+    });
+    this.instance = { client: created.client, url: created.server.url, close: created.server.close };
+    await this.subscribeEvents();
     this.emitter.emit("status", { state: "idle" } as any);
-  }
-
-  private resolveApiKey(): string | undefined {
-    return process.env.OPENCODE_API_KEY;
   }
 
   /** Subscribe to engine events and re-emit them for the extension host. */
   private async subscribeEvents() {
     if (!this.instance) return;
-    try {
-      const stream: any = await this.instance.client.global.event();
-      for await (const event of stream) {
-        this.emitter.emit("event", event.data ?? event);
+    void (async () => {
+      try {
+        const result: any = await this.instance!.client.global.event();
+        const stream = result?.stream ?? result;
+        for await (const event of stream) {
+          this.emitter.emit("event", event?.data ?? event);
+        }
+      } catch (err) {
+        console.warn("[llmcode] event stream ended:", err);
       }
-    } catch (err) {
-      console.warn("[llmcode] event stream ended:", err);
-    }
+    })();
   }
 
   private client(): OpencodeClient {
@@ -274,10 +252,5 @@ export class OpencodeBridge {
       this.instance.close();
       this.instance = undefined;
     }
-    if (this.serveProcess) {
-      this.serveProcess.kill();
-      this.serveProcess = undefined;
-    }
-    this.connected = false;
   }
 }

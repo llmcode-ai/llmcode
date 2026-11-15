@@ -1,16 +1,7 @@
-import { runTests } from "@vscode/test-cli";
+import { defineConfig } from "@vscode/test-cli";
 
-async function main() {
-  try {
-    await runTests({
-      extensionDevelopmentPath: process.cwd(),
-      extensionTestsPath: process.cwd() + "/dist/test/runTests.js",
-      launchArgs: ["--disable-extensions"],
-    });
-  } catch (err) {
-    console.error("Failed to run tests", err);
-    process.exit(1);
-  }
-}
-
-main();
+export default defineConfig({
+  files: "out/test/suite/*.js",
+  extensionDevelopmentPath: process.cwd(),
+  launchArgs: ["--disable-extensions"],
+});

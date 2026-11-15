@@ -112,10 +112,11 @@
   },
   "scripts": {
     "compile": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js --sourcemap",
+    "compile-tests": "tsc -p tsconfig.json",
     "watch": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js --sourcemap --watch",
-    "typecheck": "tsc --noEmit",
-    "pretest": "npm run compile",
-    "test": "node .vscode-test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run compile && npm run compile-tests",
+    "test": "vscode-test",
     "package": "npm run typecheck && npm run compile && vsce package --no-dependencies",
     "vscode:prepublish": "npm run compile"
   },

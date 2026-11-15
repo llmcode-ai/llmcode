@@ -3,6 +3,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 suite("LLMcode Extension Test Suite", () => {
+  suiteSetup(function () {
+    this.timeout(30000);
+  });
+
   test("extension activates", async () => {
     const ext = vscode.extensions.getExtension("llmcode.llmcode");
     assert.ok(ext, "extension not found");

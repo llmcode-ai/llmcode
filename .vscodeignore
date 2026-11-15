@@ -1,9 +1,16 @@
 .vscode/**
 .vscode-test/**
+.vscode-test.mjs
+.vscodeignore
 src/**
+out/**
+out-test/**
+dist-test/**
+node_modules/**
 **/*.map
 .gitignore
 tsconfig.json
 README.md
 media/llmcode.svg
 package-lock.json**
+*.vsix
