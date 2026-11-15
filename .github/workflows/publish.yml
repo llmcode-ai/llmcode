@@ -13,7 +13,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -33,5 +32,10 @@ jobs:
       - name: Package extension
         run: npx @vscode/vsce package --no-dependencies --out llmcode.vsix
 
-      - name: Publish to VS Code Marketplace (Trusted Publishing)
+      # Publish using a Personal Access Token stored in the VSCE_PAT secret.
+      # Create the publisher first and generate a PAT with Marketplace scope:
+      #   https://marketplace.visualstudio.com/manage
+      - name: Publish to VS Code Marketplace
         run: npx @vscode/vsce publish --packagePath llmcode.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
