@@ -184,19 +184,17 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     if (before.trim().length === 0) return false;
     // Don't trigger right after a completed statement with only punctuation.
     if (/[;{}]\s*$/.test(before)) return false;
-    // Skip when the cursor is inside a string literal or a comment — completion
-    // there just continues prose/text and is rarely wanted (like Copilot).
-    if (this.isInStringOrComment(before, document.lineAt(position.line).text.slice(position.character))) {
+    // Skip only inside comments — completing there produces prose. Strings are
+    // allowed (a user often wants to continue a string literal).
+    if (this.isInComment(before)) {
       return false;
     }
     return true;
   }
 
-  /** Heuristic: is the cursor inside a quoted string or a line comment? */
-  private isInStringOrComment(before: string, after: string): boolean {
-    // Line comment: a `//` outside of a string before the cursor.
+  /** Heuristic: is the cursor inside a line or block comment (not a string)? */
+  private isInComment(before: string): boolean {
     let inSingle = false, inDouble = false, inTemplate = false, escaped = false;
-    let lineComment = false;
     for (let i = 0; i < before.length; i++) {
       const c = before[i];
       if (escaped) { escaped = false; continue; }
@@ -207,18 +205,13 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       if (c === "'") inSingle = true;
       else if (c === '"') inDouble = true;
       else if (c === "`") inTemplate = true;
-      else if (c === "/" && before[i + 1] === "/") { lineComment = true; break; }
+      else if (c === "/" && before[i + 1] === "/") return true;
       else if (c === "/" && before[i + 1] === "*") {
-        // Block comment: if it doesn't close before the cursor, we're in it.
         const end = before.indexOf("*/", i + 2);
         if (end === -1) return true;
         i = end + 1;
       }
     }
-    // Inside an unterminated string at the cursor, or in a line comment.
-    if (inSingle || inDouble || inTemplate || lineComment) return true;
-    // Also skip when a string opens right after the cursor (typing before content).
-    void after;
     return false;
   }
 
