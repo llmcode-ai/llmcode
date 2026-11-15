@@ -188,7 +188,7 @@ Choose a **fast model** for autocomplete to keep latency low:
 "llmcode.autocomplete.model": "deepseek/deepseek-flash"
 ```
 
-Autocomplete reuses one warm session internally, so the first completion after a cold start is slower (several seconds) and subsequent ones are ~1–2 s. If you type continuously you will mostly hit the warm path.
+Each completion uses an isolated one-shot request (no history), so answers stay on-topic and never leak from previous prompts. The first completion after startup is slower (the model provider warms up); subsequent ones are ~1.8–3 s depending on the model.
 
 ### For inline autocomplete / inline edits (typing in a file)
 

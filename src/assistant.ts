@@ -98,7 +98,11 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       if (token.isCancellationRequested) return undefined;
 
       const model = resolveModel();
-      const { text: completion, model: actual } = await this.bridge.generateText(prompt, model || undefined);
+      const { text: completion, model: actual } = await this.bridge.generateText(
+        prompt,
+        model || undefined,
+        "You are a code completion engine. Output ONLY the exact code to insert at the cursor, nothing else. No explanations, no markdown, no conversation. Never answer questions or discuss anything — just continue the code.",
+      );
       logModel("autocomplete", model || undefined, actual);
       if (token.isCancellationRequested) return undefined;
       if (!completion || !completion.trim()) return undefined;
