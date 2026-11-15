@@ -107,6 +107,8 @@ const MAX_SUFFIX = 400;
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
   private lastFire = 0;
   private running: { position: vscode.Position; version: number; promise: Promise<vscode.InlineCompletionItem[] | undefined> } | undefined;
+  private timer: NodeJS.Timeout | undefined;
+  private cancelSource: vscode.CancellationTokenSource | undefined;
 
   constructor(private readonly bridge: OpencodeBridge) {}
 
@@ -121,11 +123,8 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     if (!this.shouldTrigger(document, position, context)) { debugLog("skip: trigger"); return undefined; }
 
     const invoke = context.triggerKind === vscode.InlineCompletionTriggerKind.Invoke;
-    const now = Date.now();
 
-    // Reuse only an in-flight request for the EXACT same position (and same
-    // document version). Any other position needs its own computation —
-    // otherwise the returned range is wrong and VS Code drops the suggestion.
+    // If a request for the SAME position/version is in flight, reuse it.
     if (this.running) {
       const same =
         this.running.position.line === position.line &&
@@ -135,36 +134,47 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
         debugLog("reuse running request (same position)");
         return this.running.promise;
       }
-      // A different position while a request is running: for automatic triggers,
-      // skip — the in-flight result is close enough and starting another would
-      // create a thundering herd of slow engine calls. Explicit Invoke waits.
-      if (!invoke) {
-        debugLog("skip: busy with another position");
-        return undefined;
-      }
-      return this.running.promise.then(() => this.fire(document, position, invoke, token));
+      // Cursor moved: cancel the stale request so we compute for the CURRENT
+      // cursor (a result for an old position would be discarded by VS Code).
+      debugLog("cancel stale request (position changed)");
+      this.cancelRunning();
     }
 
-    // Throttle automatic triggers; explicit Invoke is never throttled.
-    if (!invoke && now - this.lastFire < DEBOUNCE_MS) {
-      debugLog("skip: throttle");
-      return undefined;
+    // Debounce: wait for a short pause, then fire for the latest position.
+    if (this.timer) clearTimeout(this.timer);
+    return new Promise((resolve) => {
+      this.timer = setTimeout(async () => {
+        const items = await this.fire(document, position, invoke, token);
+        resolve(items);
+      }, DEBOUNCE_MS);
+    });
+  }
+
+  private cancelRunning() {
+    try {
+      this.cancelSource?.cancel();
+    } catch {
+      // ignore
     }
-    return this.fire(document, position, invoke, token);
+    this.cancelSource = undefined;
+    this.running = undefined;
   }
 
   private fire(
     document: vscode.TextDocument,
     position: vscode.Position,
     invoke: boolean,
-    token: vscode.CancellationToken,
+    _token: vscode.CancellationToken,
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
     this.lastFire = Date.now();
     debugLog(`fire at ${position.line}:${position.character} invoke=${invoke}`);
-    // Let the request finish even if VS Code cancels this particular call — the
-    // result is still valid for the same document version and may be reused.
-    const promise = this.complete(document, position, token).finally(() => {
-      if (this.running && this.running.promise === promise) this.running = undefined;
+    const cts = new vscode.CancellationTokenSource();
+    this.cancelSource = cts;
+    const promise = this.complete(document, position, cts.token).finally(() => {
+      if (this.running && this.running.promise === promise) {
+        this.running = undefined;
+        this.cancelSource = undefined;
+      }
     });
     this.running = { position, version: document.version, promise };
     return promise;
@@ -234,7 +244,7 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
 
       const model = resolveModel();
       const system =
-        "You are an autocomplete engine. Continue the code after <CURSOR>. Output ONLY the characters that go at <CURSOR> — no fences, no explanation, no prose, no questions.";
+        "You are an autocomplete engine. Continue the code after <CURSOR> as completely as possible — finish the current statement, block, and further lines if they obviously follow. Output ONLY the code that goes at <CURSOR> (may be multiple lines) — no fences, no explanation, no prose, no questions.";
       // Engine call with tools disabled: reliable, constrained, no chatter.
       // Hard timeout so a slow/looping engine call cannot wedge autocomplete.
       const r = await Promise.race([
@@ -245,6 +255,8 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       ]);
       const completion = r.text;
       const actual = r.model;
+      // If this request was superseded (cursor moved), don't bother the UI.
+      if (token.isCancellationRequested) { debugLog("cancelled before use"); return undefined; }
       logModel("autocomplete", model || undefined, actual);
       if (!completion || !completion.trim()) { debugLog("empty completion"); return undefined; }
 
@@ -263,61 +275,41 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   }
 
   private cleanCompletion(completion: string, suffix: string, prefix: string): string {
-    let out = completion.trim();
-    // Strip code fences, and markdown-style inline-code wrapping (`` `...` ``),
-    // and a leading dot that the model sometimes adds before a continuation.
-    out = out.replace(/^```[a-zA-Z0-9+]*\s*\n?/, "").replace(/```\s*$/, "");
-    out = out.replace(/^`([^`]*)`$/, "$1");
-    out = out.replace(/^[`"'\s]+/, "");
+    let out = completion;
 
-    const outLines = out.split("\n");
-    const prefixTrimmed = prefix.replace(/\s+$/, "");
+    // Remove code fences / inline-code wrapping.
+    out = out.replace(/^\s*```[a-zA-Z0-9+#-]*\s*\n?/, "").replace(/\n?\s*```\s*$/, "");
+    out = out.replace(/^`([^`]*)`$/s, "$1");
 
-    // Drop leading lines the model echoed from the end of the prefix. Walk the
-    // prefix's trailing lines backwards and remove completions lines that match.
-    const prefixLines = prefixTrimmed.split("\n").map((l) => l.trimEnd());
-    let guard = 0;
-    while (outLines.length > 0 && guard < 200) {
-      const first = (outLines[0] ?? "").trimEnd();
-      if (!first.trim()) {
-        outLines.shift();
-        guard++;
-        continue;
-      }
-      // Find this line at the very end of the prefix (allowing a few lines back).
-      const norm = (v: string) => v.replace(/\s+/g, " ").replace(/\s*([,:()])\s*/g, "$1").trim();
-      // If the completion re-emits a line that already exists in the prefix
-      // (e.g. the function header), drop it — the cursor is past that point.
-      const existsInPrefix = first.trim().length > 0 && prefixLines.some((pl) => norm(pl) === norm(first));
-      if (existsInPrefix) {
-        outLines.shift();
-        guard++;
-        continue;
-      }
-      break;
-    }
-    out = outLines.join("\n").trimEnd();
-
-    // If the completion repeats the tail of the prefix's last line at the start
-    // (the cursor continues that line), strip the overlap.
-    const lastPrefixLine = (prefixLines[prefixLines.length - 1] ?? "").trimStart();
-    if (lastPrefixLine) {
-      const firstOutLine = out.split("\n")[0].trimStart();
-      if (firstOutLine.startsWith(lastPrefixLine) && lastPrefixLine.length >= 3) {
-        const removed = out.indexOf(firstOutLine);
-        const rest = firstOutLine.slice(lastPrefixLine.length);
-        out = (out.slice(0, removed) + rest + out.slice(removed + firstOutLine.length)).replace(/^\s*\n/, "").trimStart();
+    // Strip a leading repeat of the prefix tail. The model often re-emits the
+    // text before the cursor (e.g. prefix "...const" -> completion "onst ...").
+    // Find the longest suffix of `prefix` that the completion starts with.
+    const maxCheck = Math.min(prefix.length, out.length);
+    let overlap = 0;
+    for (let len = maxCheck; len > 0; len--) {
+      if (prefix.endsWith(out.slice(0, len))) {
+        overlap = len;
+        break;
       }
     }
+    if (overlap > 0) out = out.slice(overlap);
 
-    // Strip a trailing duplicated first line of the suffix if the model echoed it.
-    if (suffix.trim().length > 0) {
-      const firstSuffixLine = suffix.trimStart().split("\n")[0];
+    // If the model emitted the cursor position literally, drop up to it.
+    const cursorIdx = out.indexOf("<CURSOR>");
+    if (cursorIdx >= 0) out = out.slice(cursorIdx + "<CURSOR>".length);
+
+    // Trim leading whitespace-only noise but keep intentional indentation.
+    out = out.replace(/^[ \t]*\n/, "");
+
+    // Drop a trailing repeat of the suffix (avoid duplicating what's after).
+    if (suffix.trim()) {
+      const firstSuffixLine = suffix.split("\n")[0];
       if (firstSuffixLine && out.endsWith(firstSuffixLine)) {
-        out = out.slice(0, out.length - firstSuffixLine.length).trimEnd();
+        out = out.slice(0, out.length - firstSuffixLine.length);
       }
     }
-    return out;
+
+    return out.replace(/\s+$/, "");
   }
 }
 
