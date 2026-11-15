@@ -33,4 +33,16 @@ jobs:
       # Marketplace credential. Requires a Trusted Publishing policy on the
       # publisher pointing at this repo + workflow (configured in the portal).
       - name: Publish to VS Code Marketplace (Trusted Publishing)
-        run: npx --yes @vscode/vsce@4 publish --oidc
+        run: |
+          npx --yes @vscode/vsce@4 publish --oidc > /tmp/publish.log 2>&1
+          status=$?
+          cat /tmp/publish.log
+          if [ $status -ne 0 ]; then
+            {
+              echo "## Publish failed"
+              echo '```'
+              tail -50 /tmp/publish.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $status
+          fi
