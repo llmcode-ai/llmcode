@@ -45,23 +45,27 @@ jobs:
 
       - name: Publish to VS Code Marketplace (Trusted Publishing)
         id: publish
-        continue-on-error: true
         run: |
-          set +e
           npx --yes @vscode/vsce@4 publish --oidc --packagePath "llmcode-${{ github.ref_name }}.vsix" > /tmp/publish.log 2>&1
           code=$?
           cat /tmp/publish.log
+          cp /tmp/publish.log publish.log
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Marketplace publish (exit $code)"
-            echo '```'
-            cat /tmp/publish.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
       - name: Publish fallback (PAT)
-        if: steps.publish.outcome == 'failure' && env.VSCE_PAT != ''
+        if: failure() && env.VSCE_PAT != ''
         run: npx --yes @vscode/vsce@4 publish --packagePath "llmcode-${{ github.ref_name }}.vsix"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Save publish log for inspection
+        if: always()
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@local"
+          git fetch origin main
+          git checkout main
+          git add -f publish.log 2>/dev/null || true
+          git commit -m "ci: publish log for ${{ github.ref_name }} [skip ci]" 2>/dev/null || true
+          git push origin main || true
