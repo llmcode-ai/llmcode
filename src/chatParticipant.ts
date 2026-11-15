@@ -31,14 +31,24 @@ export function registerChatParticipant(bridge: OpencodeBridge, context: vscode.
 
     let sessionId: string | undefined;
     try {
+      const started = Date.now();
       stream.progress(l10n.t("Asking opencode…"));
-      sessionId = (await bridge.createSession("vscode-chat")).id;
-      const opts = request.model ? { model: `${(request.model as any).vendor}/${request.model.id}` } : {};
-      await bridge.promptStream(sessionId, prompt, {
-        ...(opts as any),
-        signal: token,
-        onDelta: (text) => stream.markdown(text),
-      });
+      // Heartbeat so the user sees ongoing work while the engine generates.
+      const heartbeat = setInterval(() => {
+        const secs = Math.round((Date.now() - started) / 1000);
+        stream.progress(l10n.t("opencode is working… ({0}s)", String(secs)));
+      }, 1000);
+      try {
+        sessionId = (await bridge.createSession("vscode-chat")).id;
+        const opts = request.model ? { model: `${(request.model as any).vendor}/${request.model.id}` } : {};
+        await bridge.promptStream(sessionId, prompt, {
+          ...(opts as any),
+          signal: token,
+          onDelta: (text) => stream.markdown(text),
+        });
+      } finally {
+        clearInterval(heartbeat);
+      }
     } catch (err) {
       stream.markdown(`\n\n_${l10n.t("Error:")} ${(err as Error).message}_`);
     } finally {

@@ -229,16 +229,61 @@ export class OpencodeBridge {
     }
     if (opts.system) body.system = opts.system;
 
-    const res = await (await this.client()).session.prompt({ path: { id }, query: { directory: this.directory }, body });
-    const parts = (res.data?.parts ?? []) as any[];
-    const full = parts.filter((p) => p.type === "text").map((p) => p.text).join("");
-    // Deliver in chunks so consumers that accumulate deltas see incremental text.
-    const CHUNK = 64;
-    for (let i = 0; i < full.length; i += CHUNK) {
-      if (opts.signal?.isCancellationRequested) break;
-      opts.onDelta(full.slice(i, i + CHUNK));
+    const client = await this.client();
+    const query = { directory: this.directory };
+
+    // Fire the prompt without blocking, then poll the session: while it is busy
+    // the UI shows a live working state; assistant text is emitted as it grows.
+    await client.session.promptAsync({ path: { id }, query, body });
+
+    let emitted = "";
+    const deadline = Date.now() + 15 * 60 * 1000;
+    let sawBusy = false;
+    while (Date.now() < deadline) {
+      if (opts.signal?.isCancellationRequested) {
+        await client.session.abort({ path: { id }, query }).catch(() => undefined);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 350));
+
+      const assistantText = await this.readAssistantText(id);
+      if (assistantText.length > emitted.length) {
+        const delta = assistantText.slice(emitted.length);
+        emitted = assistantText;
+        opts.onDelta(delta);
+      }
+
+      const status = await client.session
+        .status?.({ path: { id }, query })
+        .then((r: any) => r?.data?.[id]?.type)
+        .catch(() => undefined);
+      if (status === "busy") {
+        sawBusy = true;
+      } else if (status === "idle" || (sawBusy && status === undefined && emitted.length > 0)) {
+        // One final read to capture anything written right at completion.
+        const finalText = await this.readAssistantText(id);
+        if (finalText.length > emitted.length) {
+          opts.onDelta(finalText.slice(emitted.length));
+          emitted = finalText;
+        }
+        break;
+      }
     }
-    return full;
+    return emitted;
+  }
+
+  /** Read the concatenated assistant text for a session from its messages. */
+  private async readAssistantText(id: string): Promise<string> {
+    const res = await (await this.client()).session.messages({ path: { id }, query: { directory: this.directory } });
+    const messages = (res.data ?? []) as any[];
+    let text = "";
+    for (const m of messages) {
+      if (m?.info?.role !== "assistant") continue;
+      for (const p of m.parts ?? []) {
+        if (p.type === "text" && typeof p.text === "string") text += p.text;
+      }
+    }
+    return text;
   }
 
   async listProviders(): Promise<OpenCodeProvider[]> {
