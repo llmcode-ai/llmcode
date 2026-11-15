@@ -41,32 +41,99 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "llmcode.open", "title": "LLMcode: Open Chat", "icon": "$(comment-discussion)" },
-      { "command": "llmcode.newSession", "title": "LLMcode: New Session" },
-      { "command": "llmcode.deleteSession", "title": "LLMcode: Delete Session" },
-      { "command": "llmcode.importFromMachine", "title": "LLMcode: Import Skills/MCP/Plugins from Machine", "icon": "$(cloud-download)" },
-      { "command": "llmcode.checkInstall", "title": "LLMcode: Check opencode Installation" },
-      { "command": "llmcode.installOpencode", "title": "LLMcode: Install opencode" },
-      { "command": "llmcode.openTerminal", "title": "LLMcode: Open Terminal Session" },
-      { "command": "llmcode.toggleAutocomplete", "title": "LLMcode: Toggle Autocomplete" },
-      { "command": "llmcode.inlineEdit", "title": "LLMcode: Inline Edit Selection" },
-      { "command": "llmcode.explainSelection", "title": "LLMcode: Explain Selection" },
-      { "command": "llmcode.fixSelection", "title": "LLMcode: Fix Selection" },
-      { "command": "llmcode.refactorSelection", "title": "LLMcode: Refactor Selection" },
-      { "command": "llmcode.addFileToChat", "title": "LLMcode: Add File to Chat" }
+      {
+        "command": "llmcode.open",
+        "title": "LLMcode: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "llmcode.newSession",
+        "title": "LLMcode: New Session"
+      },
+      {
+        "command": "llmcode.deleteSession",
+        "title": "LLMcode: Delete Session"
+      },
+      {
+        "command": "llmcode.importFromMachine",
+        "title": "LLMcode: Import Skills/MCP/Plugins from Machine",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "llmcode.checkInstall",
+        "title": "LLMcode: Check opencode Installation"
+      },
+      {
+        "command": "llmcode.installOpencode",
+        "title": "LLMcode: Install opencode"
+      },
+      {
+        "command": "llmcode.openTerminal",
+        "title": "LLMcode: Open Terminal Session"
+      },
+      {
+        "command": "llmcode.toggleAutocomplete",
+        "title": "LLMcode: Toggle Autocomplete"
+      },
+      {
+        "command": "llmcode.inlineEdit",
+        "title": "LLMcode: Inline Edit Selection"
+      },
+      {
+        "command": "llmcode.explainSelection",
+        "title": "LLMcode: Explain Selection"
+      },
+      {
+        "command": "llmcode.fixSelection",
+        "title": "LLMcode: Fix Selection"
+      },
+      {
+        "command": "llmcode.refactorSelection",
+        "title": "LLMcode: Refactor Selection"
+      },
+      {
+        "command": "llmcode.addFileToChat",
+        "title": "LLMcode: Add File to Chat"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "llmcode.newSession", "when": "view == llmcode.chat", "group": "navigation" },
-        { "command": "llmcode.importFromMachine", "when": "view == llmcode.chat", "group": "navigation" }
+        {
+          "command": "llmcode.newSession",
+          "when": "view == llmcode.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "llmcode.importFromMachine",
+          "when": "view == llmcode.chat",
+          "group": "navigation"
+        }
       ],
       "editor/context": [
-        { "command": "llmcode.inlineEdit", "group": "llmcode" },
-        { "command": "llmcode.explainSelection", "group": "llmcode" },
-        { "command": "llmcode.fixSelection", "group": "llmcode" },
-        { "command": "llmcode.refactorSelection", "group": "llmcode" },
-        { "command": "llmcode.addFileToChat", "group": "llmcode" },
-        { "command": "llmcode.openTerminal", "group": "llmcode" }
+        {
+          "command": "llmcode.inlineEdit",
+          "group": "llmcode"
+        },
+        {
+          "command": "llmcode.explainSelection",
+          "group": "llmcode"
+        },
+        {
+          "command": "llmcode.fixSelection",
+          "group": "llmcode"
+        },
+        {
+          "command": "llmcode.refactorSelection",
+          "group": "llmcode"
+        },
+        {
+          "command": "llmcode.addFileToChat",
+          "group": "llmcode"
+        },
+        {
+          "command": "llmcode.openTerminal",
+          "group": "llmcode"
+        }
       ]
     },
     "viewsContainers": {
@@ -80,13 +147,48 @@
     },
     "views": {
       "llmcode": [
-        { "id": "llmcode.chat", "name": "Chat", "type": "webview", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.sessions", "name": "Sessions", "type": "tree", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.providers", "name": "Providers & Models", "type": "tree", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.agents", "name": "Agents", "type": "tree", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.skills", "name": "Skills", "type": "tree", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.mcp", "name": "MCP Servers", "type": "tree", "contextualTitle": "LLMcode" },
-        { "id": "llmcode.plugins", "name": "Plugins", "type": "tree", "contextualTitle": "LLMcode" }
+        {
+          "id": "llmcode.chat",
+          "name": "Chat",
+          "type": "webview",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.sessions",
+          "name": "Sessions",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.providers",
+          "name": "Providers & Models",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.agents",
+          "name": "Agents",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.skills",
+          "name": "Skills",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.mcp",
+          "name": "MCP Servers",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        },
+        {
+          "id": "llmcode.plugins",
+          "name": "Plugins",
+          "type": "tree",
+          "contextualTitle": "LLMcode"
+        }
       ]
     },
     "configuration": {
@@ -104,7 +206,11 @@
         },
         "llmcode.mode": {
           "type": "string",
-          "enum": ["chat", "assistant", "auto"],
+          "enum": [
+            "chat",
+            "assistant",
+            "auto"
+          ],
           "default": "auto",
           "description": "Chat mode, inline assistant mode, or auto."
         },
@@ -126,8 +232,15 @@
       }
     },
     "keybindings": [
-      { "command": "llmcode.open", "key": "ctrl+shift+l" },
-      { "command": "llmcode.inlineEdit", "key": "ctrl+k", "when": "editorTextFocus && editorHasSelection" }
+      {
+        "command": "llmcode.open",
+        "key": "ctrl+shift+l"
+      },
+      {
+        "command": "llmcode.inlineEdit",
+        "key": "ctrl+k",
+        "when": "editorTextFocus && editorHasSelection"
+      }
     ]
   },
   "scripts": {
@@ -148,7 +261,7 @@
     "@types/vscode": "^1.94.0",
     "@vscode/test-cli": "^0.0.1",
     "@vscode/test-electron": "^2.4.0",
-    "@vscode/vsce": "^3.2.1",
+    "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
   }

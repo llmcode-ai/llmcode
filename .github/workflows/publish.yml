@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: npm ci
@@ -29,13 +29,8 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      - name: Package extension
-        run: npx @vscode/vsce package --no-dependencies --out llmcode.vsix
-
-      # Publish using a Personal Access Token stored in the VSCE_PAT secret.
-      # Create the publisher first and generate a PAT with Marketplace scope:
-      #   https://marketplace.visualstudio.com/manage
-      - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --packagePath llmcode.vsix
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      # Trusted Publishing: exchanges a GitHub OIDC token for a short-lived
+      # Marketplace credential. Requires a Trusted Publishing policy on the
+      # publisher pointing at this repo + workflow (configured in the portal).
+      - name: Publish to VS Code Marketplace (Trusted Publishing)
+        run: npx --yes @vscode/vsce@4 publish --oidc
