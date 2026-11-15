@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { l10n } from "vscode";
 import type { OpencodeBridge } from "./opencode";
 
 // Mode B: inline code assistant (Cursor/Copilot style).
@@ -113,12 +114,12 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
 export async function inlineEditSelection(bridge: OpencodeBridge): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    vscode.window.showInformationMessage("No active editor");
+    vscode.window.showInformationMessage(l10n.t("No active editor"));
     return;
   }
   const selection = editor.selection;
   if (selection.isEmpty) {
-    vscode.window.showInformationMessage("Select code to edit first");
+    vscode.window.showInformationMessage(l10n.t("Select code to edit first"));
     return;
   }
 
@@ -129,15 +130,15 @@ export async function inlineEditSelection(bridge: OpencodeBridge): Promise<void>
 
   const language = document.languageId;
   const instruction = await vscode.window.showInputBox({
-    prompt: "Describe the change (or leave empty for auto-fix)",
-    placeHolder: "e.g. refactor to use async/await",
+    prompt: l10n.t("Describe the change (or leave empty for auto-fix)"),
+    placeHolder: l10n.t("e.g. refactor to use async/await"),
   });
   const prompt = instruction
     ? `Rewrite the following ${language} code. Instruction: ${instruction}\n\nReturn ONLY the new code, no fences.\n\n${selectedText}`
     : `Improve and fix the following ${language} code. Return ONLY the new code, no fences.\n\n${selectedText}`;
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "LLMcode: editing…" },
+    { location: vscode.ProgressLocation.Notification, title: l10n.t("LLMcode: editing…") },
     async () => {
       try {
         const result = await bridge.generateText(prompt);
@@ -148,7 +149,7 @@ export async function inlineEditSelection(bridge: OpencodeBridge): Promise<void>
         edit.replace(originalUri, originalRange, newText);
         await vscode.workspace.applyEdit(edit);
       } catch (err) {
-        vscode.window.showErrorMessage(`LLMcode inline edit failed: ${(err as Error).message}`);
+        vscode.window.showErrorMessage(l10n.t("LLMcode inline edit failed: {0}", (err as Error).message));
       }
     },
   );
@@ -158,7 +159,7 @@ export async function inlineEditSelection(bridge: OpencodeBridge): Promise<void>
 export async function selectionCommand(bridge: OpencodeBridge, kind: string): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.selection.isEmpty) {
-    vscode.window.showInformationMessage("Select code first");
+    vscode.window.showInformationMessage(l10n.t("Select code first"));
     return;
   }
   const selection = editor.document.getText(editor.selection);
@@ -172,14 +173,14 @@ export async function selectionCommand(bridge: OpencodeBridge, kind: string): Pr
   };
   const prompt = prompts[kind] ?? prompts.explain;
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `LLMcode: ${kind}…` },
+    { location: vscode.ProgressLocation.Notification, title: l10n.t("LLMcode: {0}…", kind) },
     async () => {
       try {
         const result = await bridge.generateText(prompt);
         if (!result) return;
         showResultPanel(kind, result, language);
       } catch (err) {
-        vscode.window.showErrorMessage(`LLMcode ${kind} failed: ${(err as Error).message}`);
+        vscode.window.showErrorMessage(l10n.t("LLMcode {0} failed: {1}", kind, (err as Error).message));
       }
     },
   );

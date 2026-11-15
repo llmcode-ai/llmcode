@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { l10n } from "vscode";
 import type { OpencodeBridge } from "./opencode";
 
 // Tree views for sessions, providers, agents, skills, MCP servers, plugins.
@@ -77,7 +78,7 @@ export function providersTree(bridge: OpencodeBridge) {
         nodes.push(new GenericNode(`${p.id}/${mid}`, m?.name ?? "", "file-code", "model"));
       }
     }
-    if (nodes.length === 0) nodes.push(new GenericNode("No providers", undefined, "warning"));
+    if (nodes.length === 0) nodes.push(new GenericNode(l10n.t("No providers"), undefined, "warning"));
     return nodes;
   });
 }
@@ -94,7 +95,7 @@ export function agentsTree(bridge: OpencodeBridge) {
           "agent",
         ),
     );
-    if (nodes.length === 0) nodes.push(new GenericNode("No agents", undefined, "warning"));
+    if (nodes.length === 0) nodes.push(new GenericNode(l10n.t("No agents"), undefined, "warning"));
     return nodes;
   });
 }
@@ -103,7 +104,7 @@ export function skillsTree(bridge: OpencodeBridge) {
   return new GenericTreeProvider<unknown>("skills", "Skills", async () => {
     const skills = await bridge.listSkills();
     const nodes = skills.map((s) => new GenericNode(s.name, s.description, "lightbulb", "skill"));
-    if (nodes.length === 0) nodes.push(new GenericNode("No skills", undefined, "warning"));
+    if (nodes.length === 0) nodes.push(new GenericNode(l10n.t("No skills"), undefined, "warning"));
     return nodes;
   });
 }
@@ -120,7 +121,7 @@ export function mcpTree(bridge: OpencodeBridge) {
           "mcp",
         ),
     );
-    if (nodes.length === 0) nodes.push(new GenericNode("No MCP servers", undefined, "warning"));
+    if (nodes.length === 0) nodes.push(new GenericNode(l10n.t("No MCP servers"), undefined, "warning"));
     return nodes;
   });
 }
@@ -129,7 +130,7 @@ export function pluginsTree(bridge: OpencodeBridge) {
   return new GenericTreeProvider<unknown>("plugins", "Plugins", async () => {
     const plugins = await bridge.listPlugins();
     const nodes = plugins.map((p) => new GenericNode(p.id ?? p.file ?? "plugin", undefined, "extensions", "plugin"));
-    if (nodes.length === 0) nodes.push(new GenericNode("No plugins", undefined, "warning"));
+    if (nodes.length === 0) nodes.push(new GenericNode(l10n.t("No plugins"), undefined, "warning"));
     return nodes;
   });
 }

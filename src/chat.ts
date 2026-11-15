@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
+import { l10n } from "vscode";
 import type { OpencodeBridge } from "./opencode";
 import type { ChatMessage, HostToWebview, WebviewToHost } from "./types";
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 // Mode A: chat sidebar. A webview renders the conversation; the extension host
 // proxies it to the opencode engine and streams events back.
@@ -125,7 +130,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const s = await this.bridge.createSession();
       await this.refreshSessions();
-      this.post({ type: "message", message: systemMessage(s.id, "New session created") });
+      this.post({ type: "message", message: systemMessage(s.id, l10n.t("New session created")) });
       await this.loadSession(s.id);
     } catch (err) {
       this.post({ type: "error", message: String((err as Error).message) });
@@ -233,7 +238,7 @@ function systemMessage(sessionId: string, text: string): ChatMessage {
 
 function getChatHtml(webview: vscode.Webview): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${vscode.env.language}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -291,8 +296,8 @@ function getChatHtml(webview: vscode.Webview): string {
 <div id="messages"></div>
 <div id="status"></div>
 <div id="composer">
-  <textarea id="input" placeholder="Ask LLMcode… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
-  <button id="send" title="Send">Send</button>
+  <textarea id="input" placeholder="${escapeHtml(l10n.t("Ask LLMcode… (Enter to send, Shift+Enter for newline)"))}" rows="1"></textarea>
+  <button id="send" title="${escapeHtml(l10n.t("Send"))}">${escapeHtml(l10n.t("Send"))}</button>
 </div>
 <script>
 const vscode = acquireVsCodeApi();
@@ -365,7 +370,7 @@ window.addEventListener('message', (event) => {
       sendBtn.disabled = false;
       break;
     case 'error':
-      statusEl.textContent = '⚠ ' + msg.message;
+      statusEl.textContent = 'Error: ' + msg.message;
       break;
   }
 });

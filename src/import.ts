@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { l10n } from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -30,20 +31,20 @@ export async function importFromMachine(context: vscode.ExtensionContext): Promi
   const discovered = await discover(configDir, report);
 
   // Ask what to import
-  const choices = [
-    `Skills (${discovered.skills.length})`,
-    `MCP servers (${Object.keys(discovered.mcp).length})`,
-    `Plugins (${discovered.plugins.length})`,
+  const choices: Array<vscode.QuickPickItem & { id: "skills" | "mcp" | "plugins" }> = [
+    { id: "skills", label: l10n.t("Skills ({0})", String(discovered.skills.length)) },
+    { id: "mcp", label: l10n.t("MCP servers ({0})", String(Object.keys(discovered.mcp).length)) },
+    { id: "plugins", label: l10n.t("Plugins ({0})", String(discovered.plugins.length)) },
   ];
   const picked = await vscode.window.showQuickPick(choices, {
     canPickMany: true,
-    placeHolder: "Select what to import",
+    placeHolder: l10n.t("Select what to import"),
   });
   if (!picked || picked.length === 0) return report;
 
-  const wantSkills = picked.some((p) => p.startsWith("Skills"));
-  const wantMcp = picked.some((p) => p.startsWith("MCP"));
-  const wantPlugins = picked.some((p) => p.startsWith("Plugins"));
+  const wantSkills = picked.some((p) => p.id === "skills");
+  const wantMcp = picked.some((p) => p.id === "mcp");
+  const wantPlugins = picked.some((p) => p.id === "plugins");
 
   // Import skills
   if (wantSkills) {

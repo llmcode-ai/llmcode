@@ -43,57 +43,57 @@
     "commands": [
       {
         "command": "llmcode.open",
-        "title": "LLMcode: Open Chat",
+        "title": "%command.open%",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "llmcode.newSession",
-        "title": "LLMcode: New Session"
+        "title": "%command.newSession%"
       },
       {
         "command": "llmcode.deleteSession",
-        "title": "LLMcode: Delete Session"
+        "title": "%command.deleteSession%"
       },
       {
         "command": "llmcode.importFromMachine",
-        "title": "LLMcode: Import Skills/MCP/Plugins from Machine",
+        "title": "%command.importFromMachine%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "llmcode.checkInstall",
-        "title": "LLMcode: Check opencode Installation"
+        "title": "%command.checkInstall%"
       },
       {
         "command": "llmcode.installOpencode",
-        "title": "LLMcode: Install opencode"
+        "title": "%command.installOpencode%"
       },
       {
         "command": "llmcode.openTerminal",
-        "title": "LLMcode: Open Terminal Session"
+        "title": "%command.openTerminal%"
       },
       {
         "command": "llmcode.toggleAutocomplete",
-        "title": "LLMcode: Toggle Autocomplete"
+        "title": "%command.toggleAutocomplete%"
       },
       {
         "command": "llmcode.inlineEdit",
-        "title": "LLMcode: Inline Edit Selection"
+        "title": "%command.inlineEdit%"
       },
       {
         "command": "llmcode.explainSelection",
-        "title": "LLMcode: Explain Selection"
+        "title": "%command.explainSelection%"
       },
       {
         "command": "llmcode.fixSelection",
-        "title": "LLMcode: Fix Selection"
+        "title": "%command.fixSelection%"
       },
       {
         "command": "llmcode.refactorSelection",
-        "title": "LLMcode: Refactor Selection"
+        "title": "%command.refactorSelection%"
       },
       {
         "command": "llmcode.addFileToChat",
-        "title": "LLMcode: Add File to Chat"
+        "title": "%command.addFileToChat%"
       }
     ],
     "menus": {
@@ -149,60 +149,60 @@
       "llmcode": [
         {
           "id": "llmcode.chat",
-          "name": "Chat",
+          "name": "%view.chat%",
           "type": "webview",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.sessions",
-          "name": "Sessions",
+          "name": "%view.sessions%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.providers",
-          "name": "Providers & Models",
+          "name": "%view.providers%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.agents",
-          "name": "Agents",
+          "name": "%view.agents%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.skills",
-          "name": "Skills",
+          "name": "%view.skills%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.mcp",
-          "name": "MCP Servers",
+          "name": "%view.mcp%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         },
         {
           "id": "llmcode.plugins",
-          "name": "Plugins",
+          "name": "%view.plugins%",
           "type": "tree",
           "contextualTitle": "LLMcode"
         }
       ]
     },
     "configuration": {
-      "title": "LLMcode",
+      "title": "%configuration.title%",
       "properties": {
         "llmcode.autocomplete.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable tab autocomplete (ghost text)."
+          "description": "%config.autocomplete.enabled%"
         },
         "llmcode.autocomplete.model": {
           "type": "string",
           "default": "",
-          "description": "Model for autocomplete, e.g. anthropic/claude-sonnet. Empty uses the default model."
+          "description": "%config.autocomplete.model%"
         },
         "llmcode.mode": {
           "type": "string",
@@ -212,22 +212,22 @@
             "auto"
           ],
           "default": "auto",
-          "description": "Chat mode, inline assistant mode, or auto."
+          "description": "%config.mode%"
         },
         "llmcode.opencode.command": {
           "type": "string",
           "default": "opencode",
-          "description": "Path or name of the opencode executable."
+          "description": "%config.opencode.command%"
         },
         "llmcode.opencode.port": {
           "type": "number",
           "default": 0,
-          "description": "Fixed port for opencode serve (0 = auto)."
+          "description": "%config.opencode.port%"
         },
         "llmcode.opencode.hostname": {
           "type": "string",
           "default": "127.0.0.1",
-          "description": "Hostname for opencode serve."
+          "description": "%config.opencode.hostname%"
         }
       }
     },
@@ -264,5 +264,6 @@
     "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "l10n": "./l10n"
 }
