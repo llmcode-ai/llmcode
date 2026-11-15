@@ -56,6 +56,11 @@
         "icon": "$(gear)"
       },
       {
+        "command": "llmcode.selectChatModel",
+        "title": "%command.selectChatModel%",
+        "icon": "$(symbol-misc)"
+      },
+      {
         "command": "llmcode.importFromMachine",
         "title": "%command.importFromMachine%",
         "icon": "$(cloud-download)"

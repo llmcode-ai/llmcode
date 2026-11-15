@@ -19,5 +19,6 @@
   "config.opencode.port": "Fixed port for opencode serve (0 = auto).",
   "config.opencode.hostname": "Hostname for opencode serve.",
   "command.openSettings": "LLMcode: Open Settings",
-  "view.welcome": "LLMcode"
+  "view.welcome": "LLMcode",
+  "command.selectChatModel": "LLMcode: Select Chat Model"
 }
