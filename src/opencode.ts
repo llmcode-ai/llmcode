@@ -516,15 +516,37 @@ export class OpencodeBridge {
    * prompts, producing off-topic answers). The engine keeps the provider warm,
    * so fresh sessions are still fast after the first call.
    */
+  // A warm session reused for autocomplete so the model stays hot (first call
+  // is slow, subsequent ~1-2s). Reset when the model changes or on error.
+  private genSessionId: string | undefined;
+  private genSessionModel: string | undefined;
+
   async generateText(
     prompt: string,
     model?: string,
     system?: string,
-    opts?: { noTools?: boolean; agent?: string },
+    opts?: { noTools?: boolean; agent?: string; warm?: boolean },
   ): Promise<{ text: string; model?: string }> {
-    const session = await this.createSession("_generate");
+    const warm = opts?.warm === true;
+    let sessionId: string | undefined;
+    let temporary = false;
+    if (warm) {
+      if (this.genSessionId && this.genSessionModel !== (model ?? "")) {
+        const old = this.genSessionId;
+        this.genSessionId = undefined;
+        void this.deleteSession(old).catch(() => undefined);
+      }
+      if (!this.genSessionId) {
+        this.genSessionId = (await this.createSession("_generate")).id;
+        this.genSessionModel = model ?? "";
+      }
+      sessionId = this.genSessionId;
+    } else {
+      sessionId = (await this.createSession("_generate")).id;
+      temporary = true;
+    }
     try {
-      const res: any = await this.prompt(session.id, prompt, {
+      const res: any = await this.prompt(sessionId, prompt, {
         model,
         system,
         noTools: opts?.noTools,
@@ -539,8 +561,16 @@ export class OpencodeBridge {
       const actualModel =
         info?.providerID && info?.modelID ? `${info.providerID}/${info.modelID}` : undefined;
       return { text, model: actualModel };
+    } catch (err) {
+      // Drop the warm session on failure so the next call recreates it.
+      if (warm) {
+        const old = this.genSessionId;
+        this.genSessionId = undefined;
+        if (old) void this.deleteSession(old).catch(() => undefined);
+      }
+      throw err;
     } finally {
-      await this.deleteSession(session.id).catch(() => undefined);
+      if (temporary) await this.deleteSession(sessionId).catch(() => undefined);
     }
   }
 
@@ -549,5 +579,6 @@ export class OpencodeBridge {
       this.instance.close();
       this.instance = undefined;
     }
+    this.genSessionId = undefined;
   }
 }

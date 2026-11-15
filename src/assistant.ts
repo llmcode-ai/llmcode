@@ -184,7 +184,42 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     if (before.trim().length === 0) return false;
     // Don't trigger right after a completed statement with only punctuation.
     if (/[;{}]\s*$/.test(before)) return false;
+    // Skip when the cursor is inside a string literal or a comment — completion
+    // there just continues prose/text and is rarely wanted (like Copilot).
+    if (this.isInStringOrComment(before, document.lineAt(position.line).text.slice(position.character))) {
+      return false;
+    }
     return true;
+  }
+
+  /** Heuristic: is the cursor inside a quoted string or a line comment? */
+  private isInStringOrComment(before: string, after: string): boolean {
+    // Line comment: a `//` outside of a string before the cursor.
+    let inSingle = false, inDouble = false, inTemplate = false, escaped = false;
+    let lineComment = false;
+    for (let i = 0; i < before.length; i++) {
+      const c = before[i];
+      if (escaped) { escaped = false; continue; }
+      if (c === "\\") { escaped = true; continue; }
+      if (inSingle) { if (c === "'") inSingle = false; continue; }
+      if (inDouble) { if (c === '"') inDouble = false; continue; }
+      if (inTemplate) { if (c === "`") inTemplate = false; continue; }
+      if (c === "'") inSingle = true;
+      else if (c === '"') inDouble = true;
+      else if (c === "`") inTemplate = true;
+      else if (c === "/" && before[i + 1] === "/") { lineComment = true; break; }
+      else if (c === "/" && before[i + 1] === "*") {
+        // Block comment: if it doesn't close before the cursor, we're in it.
+        const end = before.indexOf("*/", i + 2);
+        if (end === -1) return true;
+        i = end + 1;
+      }
+    }
+    // Inside an unterminated string at the cursor, or in a line comment.
+    if (inSingle || inDouble || inTemplate || lineComment) return true;
+    // Also skip when a string opens right after the cursor (typing before content).
+    void after;
+    return false;
   }
 
   private async complete(
@@ -210,9 +245,9 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       // Engine call with tools disabled: reliable, constrained, no chatter.
       // Hard timeout so a slow/looping engine call cannot wedge autocomplete.
       const r = await Promise.race([
-        this.bridge.generateText(prompt, model || undefined, system, { noTools: true }),
+        this.bridge.generateText(prompt, model || undefined, system, { noTools: true, warm: true }),
         new Promise<{ text: string; model?: string }>((resolve) =>
-          setTimeout(() => resolve({ text: "", model: undefined }), 15000),
+          setTimeout(() => resolve({ text: "", model: undefined }), 20000),
         ),
       ]);
       const completion = r.text;

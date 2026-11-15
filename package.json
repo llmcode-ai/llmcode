@@ -2,7 +2,7 @@
   "name": "llmcode",
   "displayName": "LLMcode",
   "description": "opencode remastered as a VS Code extension — chat, inline code assistant, and full config control",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "publisher": "llmcode",
   "license": "MIT",
   "icon": "media/icon.png",

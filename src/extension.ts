@@ -169,7 +169,8 @@ async function autoPickFastModel() {
     if (!models.length) return;
     // Prefer a model whose name hints at being fast/cheap for autocomplete, but
     // work with whatever is available (any provider/model).
-    const looksFast = (id: string, name?: string) => /(flash|mini|small|fast|haiku|luna|instant|turbo|lite|nano)/i.test(`${id} ${name ?? ""}`);
+    // Prefer models that tend to be fast for completion (flash/mini/sonnet/haiku…).
+    const looksFast = (id: string, name?: string) => /(flash|mini|small|fast|haiku|luna|instant|turbo|lite|nano|sonnet)/i.test(`${id} ${name ?? ""}`);
     const pick = (models.find((m) => looksFast(m.id, m.name)) ?? models[0]).id;
     await cfg.update("model", pick, vscode.ConfigurationTarget.Global);
   } catch {
