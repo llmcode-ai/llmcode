@@ -198,6 +198,11 @@
           "type": "string",
           "default": "127.0.0.1",
           "description": "%config.opencode.hostname%"
+        },
+        "llmcode.setDefaultChatModel": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.setDefaultChatModel%"
         }
       }
     },

@@ -17,6 +17,22 @@ type SDK = {
   createOpencodeClient: (config?: any) => OpencodeClient;
 };
 
+/** Find an available TCP port on the loopback interface. */
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const net = require("node:net");
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 // The opencode engine bridge. Uses the official SDK, which spawns a managed
 // `opencode serve` child process and returns a client pointed at it. All engine
 // calls go through the OpencodeClient (REST + SSE).
@@ -73,21 +89,31 @@ export class OpencodeBridge {
   private async doStart(directory?: string): Promise<void> {
     this.directory = directory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
     const cfg = vscode.workspace.getConfiguration("llmcode.opencode");
-    const port = cfg.get<number>("port", 0);
+    const configuredPort = cfg.get<number>("port", 0);
     const hostname = cfg.get<string>("hostname", "127.0.0.1");
 
     const sdk: SDK = (await import("@opencode-ai/sdk")) as any;
-    const created = await sdk.createOpencode({
-      hostname,
-      port: port === 0 ? 4096 : port,
-      config: {},
-    });
-    this.instance = { client: created.client, url: created.server.url, close: created.server.close };
-    await this.subscribeEvents();
-    // Warm up: wait until the engine has loaded its agents so the first UI
-    // refresh isn't empty (opencode loads config/agents asynchronously).
-    void this.warmup();
-    this.emitter.emit("status", { state: "idle" } as any);
+
+    // Try the configured/free port, then fall back to other free ports. A stale
+    // `opencode serve` from a previous session can occupy 4096, which makes the
+    // spawned server exit with code 1 (ServeError). Picking a free port avoids it.
+    const candidates = configuredPort > 0 ? [configuredPort] : [4096, 0];
+    let lastErr: unknown;
+    for (const port of candidates) {
+      const tryPort = port === 0 ? await findFreePort() : port;
+      try {
+        const created = await sdk.createOpencode({ hostname, port: tryPort, config: {} });
+        this.instance = { client: created.client, url: created.server.url, close: created.server.close };
+        await this.subscribeEvents();
+        void this.warmup();
+        this.emitter.emit("status", { state: "idle" } as any);
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[llmcode] opencode serve failed on port ${tryPort}:`, (err as Error).message);
+      }
+    }
+    throw lastErr ?? new Error("failed to start opencode engine");
   }
 
   private async warmup() {

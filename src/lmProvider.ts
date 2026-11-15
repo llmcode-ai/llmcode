@@ -48,8 +48,23 @@ export class OpencodeChatProvider implements vscode.LanguageModelChatProvider<Mo
     _token: vscode.CancellationToken,
   ): Promise<ModelInfo[]> {
     const models = await this.ensureModels();
-    if (options.silent) return models;
+    if (models.length > 0) void this.applyDefaultModel(models[0]);
     return models;
+  }
+
+  /** Point VS Code's default chat model at an LLMcode model so the native
+   *  chat/Copilot surface uses opencode out of the box, unless the user already
+   *  picked a default. This is the closest legitimate way to "replace" Copilot. */
+  private async applyDefaultModel(model: ModelInfo) {
+    try {
+      if (!vscode.workspace.getConfiguration("llmcode").get<boolean>("setDefaultChatModel", true)) return;
+      const cfg = vscode.workspace.getConfiguration("chat");
+      const current = cfg.get<string>("defaultModel");
+      if (current && current.trim().length > 0) return; // respect user choice
+      await cfg.update("defaultModel", model.id, vscode.ConfigurationTarget.Global);
+    } catch {
+      // best-effort; some builds may not allow writing this setting
+    }
   }
 
   async provideLanguageModelChatResponse(

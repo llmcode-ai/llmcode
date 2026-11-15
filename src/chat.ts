@@ -317,6 +317,16 @@ function getChatHtml(webview: vscode.Webview): string {
   .row.user .bubble { background: var(--bubble-user); border: 1px solid var(--border); }
   .row.assistant .bubble { background: var(--vscode-editorWidget-background, transparent); border: 1px solid var(--border); }
   .tool { align-self: flex-start; color: var(--muted); font-style: italic; font-size: 12px; padding: 2px 4px; }
+  .bubble h1, .bubble h2, .bubble h3, .bubble h4, .bubble h5, .bubble h6 { margin: 10px 0 6px; font-weight: 600; line-height: 1.3; }
+  .bubble h1 { font-size: 1.35em; } .bubble h2 { font-size: 1.2em; } .bubble h3 { font-size: 1.08em; }
+  .bubble code.inline { background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.2)); padding: 1px 5px; border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em; }
+  .bubble strong { font-weight: 600; }
+  .code { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)); }
+  .code-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; background: var(--vscode-editorWidget-background, rgba(128,128,128,0.12)); font-size: 11px; color: var(--muted); }
+  .code-copy { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .code-copy:hover { color: var(--fg); }
+  .code pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
+  .code pre code { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 1.5; white-space: pre; }
   /* Composer */
   #composer {
     display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); align-items: flex-end;
@@ -380,6 +390,46 @@ function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 
 function clearMessages() { messagesEl.innerHTML = ''; }
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Minimal, safe markdown renderer: fenced code blocks, inline code, bold,
+// italic, headings, and line breaks. Everything is HTML-escaped first.
+function renderMarkdown(src) {
+  const fence = String.fromCharCode(96, 96, 96);
+  const parts = String(src || '').split(fence);
+  let html = '';
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      // code block (first line may be a language)
+      const raw = parts[i];
+      const nl = raw.indexOf('\n');
+      const lang = nl >= 0 ? raw.slice(0, nl).trim() : '';
+      const code = nl >= 0 ? raw.slice(nl + 1) : raw;
+      html += '<div class="code"><div class="code-head"><span>' + escapeHtml(lang || 'code') +
+        '</span><button class="code-copy" data-code="' + encodeURIComponent(code) + '">Copy</button></div><pre><code>' +
+        escapeHtml(code) + '</code></pre></div>';
+    } else {
+      let t = escapeHtml(parts[i]);
+      const bt = String.fromCharCode(96);
+      const inlineRe = new RegExp(bt + '([^' + bt + ']+)' + bt, 'g');
+      t = t.replace(/^###### (.*)$/gm, '<h6>$1</h6>')
+           .replace(/^##### (.*)$/gm, '<h5>$1</h5>')
+           .replace(/^#### (.*)$/gm, '<h4>$1</h4>')
+           .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+           .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+           .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+           .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+           .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+           .replace(inlineRe, '<code class="inline">$1</code>')
+           .replace(/\n/g, '<br>');
+      html += t;
+    }
+  }
+  return html;
+}
+
 function addRow(role, text) {
   const stick = atBottom();
   const row = document.createElement('div');
@@ -389,20 +439,33 @@ function addRow(role, text) {
   roleEl.textContent = role === 'user' ? 'You' : 'LLMcode';
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text || '';
+  bubble.dataset.raw = text || '';
+  if (role === 'assistant') bubble.innerHTML = renderMarkdown(text || '');
+  else bubble.textContent = text || '';
+  bubble.querySelectorAll('.code-copy').forEach((b) => {
+    b.onclick = () => {
+      navigator.clipboard.writeText(decodeURIComponent(b.getAttribute('data-code') || ''));
+      b.textContent = 'Copied';
+      setTimeout(() => (b.textContent = 'Copy'), 1200);
+    };
+  });
   const actions = document.createElement('div');
   actions.className = 'msg-actions';
   const copyBtn = document.createElement('button');
   copyBtn.className = 'msg-action';
   copyBtn.textContent = 'Copy';
-  copyBtn.onclick = () => { navigator.clipboard.writeText(bubble.textContent || ''); copyBtn.textContent = 'Copied'; setTimeout(() => copyBtn.textContent = 'Copy', 1200); };
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(bubble.dataset.raw || '');
+    copyBtn.textContent = 'Copied';
+    setTimeout(() => (copyBtn.textContent = 'Copy'), 1200);
+  };
   actions.appendChild(copyBtn);
   if (role === 'user') {
     const editBtn = document.createElement('button');
     editBtn.className = 'msg-action';
     editBtn.textContent = 'Edit';
     editBtn.onclick = () => {
-      inputEl.value = bubble.textContent || '';
+      inputEl.value = bubble.dataset.raw || '';
       inputEl.focus();
       inputEl.style.height = 'auto';
       inputEl.style.height = Math.min(inputEl.scrollHeight, 220) + 'px';
@@ -533,8 +596,18 @@ window.addEventListener('message', (event) => {
       }
       break;
     case 'delta': {
-      const b = lastAssistantBubble();
-      if (b) { b.textContent += msg.text; if (atBottom()) scrollDown(); }
+      let b = lastAssistantBubble();
+      if (!b) b = addRow('assistant', '');
+      b.dataset.raw = (b.dataset.raw || '') + msg.text;
+      b.innerHTML = renderMarkdown(b.dataset.raw);
+      b.querySelectorAll('.code-copy').forEach((el) => {
+        el.onclick = () => {
+          navigator.clipboard.writeText(decodeURIComponent(el.getAttribute('data-code') || ''));
+          el.textContent = 'Copied';
+          setTimeout(() => (el.textContent = 'Copy'), 1200);
+        };
+      });
+      if (atBottom()) scrollDown();
       break;
     }
     case 'status':
