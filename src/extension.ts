@@ -1,45 +1,26 @@
 import * as vscode from "vscode";
 import { l10n } from "vscode";
 import { OpencodeBridge } from "./opencode";
-import { ChatViewProvider } from "./chat";
+import { ChatPanel } from "./chat";
+import { SettingsPanel } from "./settings";
+import { WelcomeViewProvider } from "./welcome";
 import { AutocompleteProvider, inlineEditSelection, selectionCommand } from "./assistant";
-import {
-  SessionsTreeProvider,
-  providersTree,
-  agentsTree,
-  skillsTree,
-  mcpTree,
-  pluginsTree,
-} from "./trees";
 import { importFromMachine } from "./import";
+import { registerChatProvider } from "./lmProvider";
 
 let bridge: OpencodeBridge;
 
 export async function activate(context: vscode.ExtensionContext) {
   bridge = new OpencodeBridge();
-  // Chat view (Mode A)
-  const chatProvider = new ChatViewProvider(bridge);
+
+  // Sidebar launcher
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
+    vscode.window.registerWebviewViewProvider(WelcomeViewProvider.viewType, new WelcomeViewProvider()),
   );
 
-  // Tree views
-  const sessionsTree = new SessionsTreeProvider(bridge);
-  const providers = providersTree(bridge);
-  const agents = agentsTree(bridge);
-  const skills = skillsTree(bridge);
-  const mcp = mcpTree(bridge);
-  const plugins = pluginsTree(bridge);
-  context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("llmcode.sessions", sessionsTree),
-    vscode.window.registerTreeDataProvider("llmcode.providers", providers),
-    vscode.window.registerTreeDataProvider("llmcode.agents", agents),
-    vscode.window.registerTreeDataProvider("llmcode.skills", skills),
-    vscode.window.registerTreeDataProvider("llmcode.mcp", mcp),
-    vscode.window.registerTreeDataProvider("llmcode.plugins", plugins),
-  );
+  // Register opencode as a native language-model provider so VS Code's own chat
+  // (Copilot Chat UI, inline chat, terminal chat) can use opencode models.
+  const chatProvider = registerChatProvider(bridge, context);
 
   // Mode B: autocomplete + inline edit
   const autocomplete = new AutocompleteProvider(bridge);
@@ -47,16 +28,16 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], autocomplete),
   );
 
+  const openChat = () => ChatPanel.createOrShow(context.extensionUri, bridge);
+  const openSettings = () => SettingsPanel.createOrShow(context.extensionUri, bridge);
+
   // Commands
   context.subscriptions.push(
     vscode.commands.registerCommand("llmcode.open", () => openChat()),
-    vscode.commands.registerCommand("llmcode.newSession", () => bridge.createSession().then(() => refreshAll(sessionsTree, providers, agents, skills, mcp, plugins))),
-    vscode.commands.registerCommand("llmcode.deleteSession", async (node) => {
-      const id = node?.sessionId ?? (await pickSession());
-      if (id) {
-        await bridge.deleteSession(id);
-        refreshAll(sessionsTree, providers, agents, skills, mcp, plugins);
-      }
+    vscode.commands.registerCommand("llmcode.openSettings", () => openSettings()),
+    vscode.commands.registerCommand("llmcode.newSession", async () => {
+      const panel = ChatPanel.createOrShow(context.extensionUri, bridge);
+      await panel.newSession();
     }),
     vscode.commands.registerCommand("llmcode.importFromMachine", () => runImport(context)),
     vscode.commands.registerCommand("llmcode.checkInstall", () => checkInstall()),
@@ -72,9 +53,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Start the engine and ensure opencode is present. Do NOT block activation —
   // the engine boots in the background and the chat surface updates when ready.
+  bridge.on("status", () => chatProvider.refresh());
   void ensureOpencode();
 
-  // Expose the bridge for tests and potential future consumers.
   return bridge;
 }
 
@@ -140,29 +121,15 @@ function toggleAutocomplete() {
   vscode.window.showInformationMessage(next ? l10n.t("Autocomplete enabled") : l10n.t("Autocomplete disabled"));
 }
 
-async function pickSession(): Promise<string | undefined> {
-  const sessions = await bridge.listSessions();
-  const picked = await vscode.window.showQuickPick(
-    sessions.map((s) => ({ label: s.title || s.id, id: s.id })),
-    { placeHolder: l10n.t("Select a session") },
-  );
-  return picked?.id;
-}
-
-function openChat() {
-  vscode.commands.executeCommand("llmcode.chat.focus");
-}
-
-function refreshAll(...trees: Array<{ refresh(): void }>) {
-  for (const t of trees) t.refresh();
-}
-
 async function runImport(context: vscode.ExtensionContext) {
-  const report = await importFromMachine(context);
+  const report = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: l10n.t("Importing from machine…"), cancellable: false },
+    () => importFromMachine(context),
+  );
   const summary = [
-    l10n.t("Skills: {0}/{1} imported", String(report.skills.imported), String(report.skills.total)),
-    l10n.t("MCP: {0}/{1} imported", String(report.mcp.imported), String(report.mcp.total)),
-    l10n.t("Plugins: {0}/{1} imported", String(report.plugins.imported), String(report.plugins.total)),
+    l10n.t("Skills: {0} added, {1} already present", String(report.skills.imported), String(report.skills.skipped)),
+    l10n.t("MCP: {0} added, {1} already present", String(report.mcp.imported), String(report.mcp.skipped)),
+    l10n.t("Plugins: {0} added, {1} already present", String(report.plugins.imported), String(report.plugins.skipped)),
   ].join("\n");
   if (report.errors.length) {
     await vscode.window.showWarningMessage(

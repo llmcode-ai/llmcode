@@ -32,8 +32,15 @@ suite("LLMcode Engine Bridge", () => {
   });
 
   test("lists agents", async function () {
-    this.timeout(20000);
-    const agents = await bridge.listAgents();
+    this.timeout(30000);
+    // Agents load asynchronously after the server starts; poll briefly.
+    let agents: Awaited<ReturnType<typeof bridge.listAgents>> = [];
+    const deadline = Date.now() + 20000;
+    do {
+      agents = await bridge.listAgents();
+      if (agents.length > 0) break;
+      await new Promise((r) => setTimeout(r, 300));
+    } while (Date.now() < deadline);
     assert.ok(Array.isArray(agents), "agents should be an array");
     assert.ok(agents.length > 0, "expected at least one agent (build/plan/general…)");
   });

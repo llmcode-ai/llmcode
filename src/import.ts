@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { l10n } from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -27,24 +26,12 @@ export async function importFromMachine(context: vscode.ExtensionContext): Promi
 
   const configDir = process.env.OPENCODE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "opencode");
 
-  // Discovery
+  // Discovery (fast, filesystem only)
   const discovered = await discover(configDir, report);
 
-  // Ask what to import
-  const choices: Array<vscode.QuickPickItem & { id: "skills" | "mcp" | "plugins" }> = [
-    { id: "skills", label: l10n.t("Skills ({0})", String(discovered.skills.length)) },
-    { id: "mcp", label: l10n.t("MCP servers ({0})", String(Object.keys(discovered.mcp).length)) },
-    { id: "plugins", label: l10n.t("Plugins ({0})", String(discovered.plugins.length)) },
-  ];
-  const picked = await vscode.window.showQuickPick(choices, {
-    canPickMany: true,
-    placeHolder: l10n.t("Select what to import"),
-  });
-  if (!picked || picked.length === 0) return report;
-
-  const wantSkills = picked.some((p) => p.id === "skills");
-  const wantMcp = picked.some((p) => p.id === "mcp");
-  const wantPlugins = picked.some((p) => p.id === "plugins");
+  const wantSkills = discovered.skills.length > 0;
+  const wantMcp = Object.keys(discovered.mcp).length > 0;
+  const wantPlugins = discovered.plugins.length > 0;
 
   // Import skills
   if (wantSkills) {
@@ -162,27 +149,31 @@ async function discoverProject(out: Discovered, report: ImportReport) {
 }
 
 async function discoverWsl(out: Discovered, report: ImportReport) {
-  // Only meaningful on Windows; enumerate WSL distros and their opencode dirs.
+  // Only meaningful on Windows; enumerate WSL distros and read each distro's
+  // opencode config via the wsl.exe bridge.
   if (process.platform !== "win32") return;
   try {
     const { execFile } = await import("node:child_process");
-    const distros = await new Promise<string[]>((resolve) => {
-      execFile("wsl.exe", ["-l", "-q"], (err, stdout) => {
-        if (err) return resolve([]);
-        resolve(
-          stdout
-            .split("\n")
-            .map((s) => s.trim())
-            .filter((s) => s && !s.includes("\x00")),
-        );
+    const exec = (args: string[]) =>
+      new Promise<string>((resolve) => {
+        execFile("wsl.exe", args, { maxBuffer: 1024 * 1024 }, (err, stdout) => {
+          if (err) return resolve("");
+          resolve(stdout ?? "");
+        });
       });
-    });
+    const list = await exec(["-l", "-q"]);
+    const distros = list
+      .split("\n")
+      .map((x) => x.replace(/\x00/g, "").trim())
+      .filter(Boolean);
     for (const distro of distros) {
-      const wslDir = `\\\\wsl$\\${distro}\\home`;
+      const home = (
+        await exec(["-d", distro, "--", "sh", "-lc", 'printf %s "$HOME/.config/opencode"'])
+      ).trim();
+      if (!home) continue;
+      const unc = "\\\\wsl$\\" + distro + home.replace(/\//g, "\\");
       try {
-        const home = `\\\\wsl$\\${distro}\\home`;
-        const configDir = path.join(home, "dev", "llmcode"); // heuristic only
-        if (fs.existsSync(configDir)) await discoverDir(configDir, out, report);
+        if (fs.existsSync(unc)) await discoverDir(unc, out, report);
       } catch {
         // skip inaccessible distro
       }

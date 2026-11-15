@@ -61,9 +61,11 @@ export interface OpenCodeConfig {
 // Messages exchanged between the webview and the extension host.
 export type HostToWebview =
   | { type: "ready" }
-  | { type: "sessions"; sessions: OpenCodeSession[] }
+  | { type: "sessions"; sessions: OpenCodeSession[]; activeId?: string }
+  | { type: "callSessions"; id: string }
+  | { type: "conversation"; sessionId: string; messages: ChatMessage[] }
   | { type: "providers"; providers: OpenCodeProvider[] }
-  | { type: "models"; models: OpenCodeModel[] }
+  | { type: "models"; models: OpenCodeModel[]; activeModel?: string }
   | { type: "agents"; agents: OpenCodeAgent[] }
   | { type: "skills"; skills: OpenCodeSkill[] }
   | { type: "mcp"; servers: OpenCodeMcpServer[] }
@@ -77,19 +79,21 @@ export type HostToWebview =
 
 export type WebviewToHost =
   | { type: "init" }
-  | { type: "send"; sessionId: string; text: string; agent?: string; model?: string }
+  | { type: "send"; sessionId: string; text: string; agent?: string; model?: string; reasoning?: boolean }
   | { type: "newSession" }
   | { type: "switchSession"; sessionId: string }
   | { type: "deleteSession"; sessionId: string }
   | { type: "forkSession"; sessionId: string }
+  | { type: "renameSession"; sessionId: string; title: string }
   | { type: "compactSession"; sessionId: string }
   | { type: "editMessage"; sessionId: string; messageId: string; text: string }
   | { type: "stop"; sessionId?: string }
+  | { type: "openSettings" }
   | { type: "import" }
   | { type: "refresh"; kind: "sessions" | "providers" | "models" | "agents" | "skills" | "mcp" | "plugins" | "config" };
 
 export interface ChatStatus {
-  state: "idle" | "thinking" | "streaming" | "working";
+  state: "idle" | "connecting" | "thinking" | "streaming" | "working";
   sessionId?: string;
   tokensPerSecond?: number;
   label?: string;

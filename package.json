@@ -51,8 +51,9 @@
         "title": "%command.newSession%"
       },
       {
-        "command": "llmcode.deleteSession",
-        "title": "%command.deleteSession%"
+        "command": "llmcode.openSettings",
+        "title": "%command.openSettings%",
+        "icon": "$(gear)"
       },
       {
         "command": "llmcode.importFromMachine",
@@ -99,13 +100,13 @@
     "menus": {
       "view/title": [
         {
-          "command": "llmcode.newSession",
-          "when": "view == llmcode.chat",
+          "command": "llmcode.open",
+          "when": "view == llmcode.welcome",
           "group": "navigation"
         },
         {
-          "command": "llmcode.importFromMachine",
-          "when": "view == llmcode.chat",
+          "command": "llmcode.openSettings",
+          "when": "view == llmcode.welcome",
           "group": "navigation"
         }
       ],
@@ -148,45 +149,9 @@
     "views": {
       "llmcode": [
         {
-          "id": "llmcode.chat",
-          "name": "%view.chat%",
+          "id": "llmcode.welcome",
+          "name": "%view.welcome%",
           "type": "webview",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.sessions",
-          "name": "%view.sessions%",
-          "type": "tree",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.providers",
-          "name": "%view.providers%",
-          "type": "tree",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.agents",
-          "name": "%view.agents%",
-          "type": "tree",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.skills",
-          "name": "%view.skills%",
-          "type": "tree",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.mcp",
-          "name": "%view.mcp%",
-          "type": "tree",
-          "contextualTitle": "LLMcode"
-        },
-        {
-          "id": "llmcode.plugins",
-          "name": "%view.plugins%",
-          "type": "tree",
           "contextualTitle": "LLMcode"
         }
       ]
@@ -240,6 +205,12 @@
         "command": "llmcode.inlineEdit",
         "key": "ctrl+k",
         "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "languageModelChatProviders": [
+      {
+        "vendor": "llmcode",
+        "displayName": "LLMcode (opencode)"
       }
     ]
   },
