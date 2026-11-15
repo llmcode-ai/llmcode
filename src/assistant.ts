@@ -106,7 +106,7 @@ const MAX_SUFFIX = 400;
 
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
   private lastFire = 0;
-  private running: { position: vscode.Position; promise: Promise<vscode.InlineCompletionItem[] | undefined> } | undefined;
+  private running: { position: vscode.Position; version: number; promise: Promise<vscode.InlineCompletionItem[] | undefined> } | undefined;
 
   constructor(private readonly bridge: OpencodeBridge) {}
 
@@ -123,21 +123,23 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
     const invoke = context.triggerKind === vscode.InlineCompletionTriggerKind.Invoke;
     const now = Date.now();
 
-    // If a generation is already running, don't cancel it (that was why rapid
-    // typing produced nothing). Reuse its result when the cursor is still on the
-    // same line; otherwise wait for it and start fresh afterwards.
+    // Reuse only an in-flight request for the EXACT same position (and same
+    // document version). Any other position needs its own computation —
+    // otherwise the returned range is wrong and VS Code drops the suggestion.
     if (this.running) {
-      if (this.running.position.line === position.line) {
-        debugLog("reuse running request");
+      const same =
+        this.running.position.line === position.line &&
+        this.running.position.character === position.character &&
+        this.running.version === document.version;
+      if (same) {
+        debugLog("reuse running request (same position)");
         return this.running.promise;
       }
-      const prev = this.running.promise;
-      debugLog("queue behind running request");
-      return prev.then(() => this.fire(document, position, invoke, token));
+      // Different position: fall through and fire a fresh request.
     }
 
     // Throttle automatic triggers; explicit Invoke is never throttled.
-    if (!invoke && now - this.lastFire < DEBOUNCE_MS) {
+    if (!invoke && !this.running && now - this.lastFire < DEBOUNCE_MS) {
       debugLog("skip: throttle");
       return undefined;
     }
@@ -152,12 +154,12 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
     this.lastFire = Date.now();
     debugLog(`fire at ${position.line}:${position.character} invoke=${invoke}`);
-    // No internal cancellation: let the request finish so a result is produced.
-    const cts = new vscode.CancellationTokenSource();
-    const promise = this.complete(document, position, cts.token).finally(() => {
+    // Let the request finish even if VS Code cancels this particular call — the
+    // result is still valid for the same document version and may be reused.
+    const promise = this.complete(document, position, token).finally(() => {
       if (this.running && this.running.promise === promise) this.running = undefined;
     });
-    this.running = { position, promise };
+    this.running = { position, version: document.version, promise };
     return promise;
   }
 
@@ -191,7 +193,6 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
 
       const language = document.languageId;
       const prompt = this.buildFimPrompt(language, prefix, suffix);
-      if (token.isCancellationRequested) return undefined;
 
       const model = resolveModel();
       const system =
@@ -199,16 +200,15 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       // Engine call with tools disabled: reliable, constrained, no chatter.
       // Hard timeout so a slow/looping engine call cannot wedge autocomplete.
       const r = await Promise.race([
-        this.bridge.generateText(prompt, model || undefined, system, { noTools: true, agent: "title" }),
+        this.bridge.generateText(prompt, model || undefined, system, { noTools: true }),
         new Promise<{ text: string; model?: string }>((resolve) =>
-          setTimeout(() => resolve({ text: "", model: undefined }), 9000),
+          setTimeout(() => resolve({ text: "", model: undefined }), 15000),
         ),
       ]);
       const completion = r.text;
       const actual = r.model;
       logModel("autocomplete", model || undefined, actual);
-      if (token.isCancellationRequested) return undefined;
-      if (!completion || !completion.trim()) return undefined;
+      if (!completion || !completion.trim()) { debugLog("empty completion"); return undefined; }
 
       const cleaned = this.cleanCompletion(completion, suffix, prefix);
       debugLog(`raw=${JSON.stringify(completion.slice(0,80))} cleaned=${JSON.stringify(cleaned.slice(0,80))} actual=${actual}`);
