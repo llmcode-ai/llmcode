@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { l10n } from "vscode";
 import { OpencodeBridge } from "./opencode";
 import { SettingsPanel } from "./settings";
-import { AutocompleteProvider, inlineEditSelection, selectionCommand } from "./assistant";
+import { AutocompleteProvider, inlineEditSelection, selectionCommand, initAssistantUi } from "./assistant";
 import { importFromMachine } from "./import";
 import { registerChatProvider } from "./lmProvider";
 import { registerChatParticipant } from "./chatParticipant";
@@ -20,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext) {
   registerChatParticipant(bridge, context);
 
   // Mode B: autocomplete + inline edit
+  initAssistantUi(context);
   const autocomplete = new AutocompleteProvider(bridge);
   context.subscriptions.push(
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], autocomplete),
@@ -37,6 +38,9 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("llmcode.openSettings", () => openSettings()),
     vscode.commands.registerCommand("llmcode.selectChatModel", () => selectChatModel()),
     vscode.commands.registerCommand("llmcode.useLocalAgent", () => useLocalAgentByDefault()),
+    vscode.commands.registerCommand("llmcode.showLastModel", () => {
+      vscode.commands.executeCommand("workbench.action.output.toggleOutput");
+    }),
     vscode.commands.registerCommand("llmcode.newSession", () => openNativeChat()),
     vscode.commands.registerCommand("llmcode.importFromMachine", () => runImport(context)),
     vscode.commands.registerCommand("llmcode.checkInstall", () => checkInstall()),

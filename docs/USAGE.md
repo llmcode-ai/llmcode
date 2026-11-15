@@ -170,6 +170,27 @@ LLMcode reads each model's limits from the opencode engine and reports them to V
 
 ## 9. Verifying it's LLMcode answering
 
+### For inline autocomplete / inline edits (typing in a file)
+
+LLMcode shows which model actually served each completion:
+
+- **Status bar (bottom right):** the LLMcode item updates to the model that answered (e.g. `abliteration/opus-5.5`). Hover it to see the kind (autocomplete / inline-edit / selection command).
+- **Output panel:** run **LLMcode: Show Model Log** (or open *Output → LLMcode*). Each line records `requested=… actual=…` — the **actual** value is read from the engine's response, not guessed.
+
+Which model is used:
+
+1. `llmcode.autocomplete.model` if set, otherwise
+2. the VS Code `chat.defaultModel`, otherwise
+3. the engine's default model.
+
+Set it explicitly to pin autocomplete to your model:
+
+```json
+"llmcode.autocomplete.model": "abliteration/opus-5.5"
+```
+
+
+
 - In chat, open the model picker and confirm a model under **LLMcode (opencode)** is selected.
 - Or ask `@llmcode …` — the response is produced by the opencode engine.
 - Programmatically: `vscode.lm.selectChatModels({ vendor: 'llmcode' })` returns the opencode models, and `provider.provideLanguageModelChatResponse(...)` streams from opencode. Both are covered by the test suite.

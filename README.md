@@ -71,6 +71,7 @@ Programmatically: `vscode.lm.selectChatModels({ vendor: 'llmcode' })` returns th
 |---|---|---|
 | `LLMcode: Open Chat` | `Ctrl+Shift+L` | Opens VS Code's native chat |
 | `LLMcode: Select Chat Model` | — | Opens the native model picker to choose an LLMcode model |
+| `LLMcode: Show Model Log` | — | Opens the LLMcode output log (which model actually answered each completion) |
 | `LLMcode: Use Local Agent by Default` | — | Makes the Agents window default to **Local** instead of Copilot |
 | `LLMcode: Open Settings` | — | Opens the LLMcode Settings panel |
 | `LLMcode: New Session` | — | Opens the chat to start a new session |

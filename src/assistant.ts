@@ -8,6 +8,39 @@ import type { OpencodeBridge } from "./opencode";
 //   client-side, generation through opencode bridge.generateText.
 // - Inline edit: selection -> generation -> native vscode.diff apply/reject.
 
+let output: vscode.OutputChannel | undefined;
+let statusBar: vscode.StatusBarItem | undefined;
+
+/** Initialise the log channel and status-bar indicator (called once). */
+export function initAssistantUi(context: vscode.ExtensionContext) {
+  output = vscode.window.createOutputChannel("LLMcode");
+  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBar.name = "LLMcode";
+  statusBar.command = "llmcode.showLastModel";
+  statusBar.text = "$(sparkle) LLMcode";
+  statusBar.tooltip = l10n.t("LLMcode: last model used (click to view log)");
+  statusBar.show();
+  context.subscriptions.push(output, statusBar);
+}
+
+function logModel(kind: string, requested: string | undefined, actual: string | undefined) {
+  const line = `[${new Date().toISOString()}] ${kind}: requested=${requested || "(default)"} actual=${actual || "unknown"}`;
+  output?.appendLine(line);
+  if (statusBar) {
+    statusBar.text = `$(sparkle) ${actual || "LLMcode"}`;
+    statusBar.tooltip = l10n.t("Last {0} model: {1}", kind, actual || "unknown");
+  }
+}
+
+/** Resolve the model to use: explicit autocomplete model, else chat default. */
+function resolveModel(): string | undefined {
+  const configured = vscode.workspace.getConfiguration("llmcode.autocomplete").get<string>("model", "");
+  if (configured && configured.trim()) return configured.trim();
+  const def = vscode.workspace.getConfiguration("chat").get<string>("defaultModel", "");
+  if (def && def.trim()) return def.trim();
+  return undefined;
+}
+
 const DEBOUNCE_MS = 200;
 const MAX_PREFIX = 4000;
 const MAX_SUFFIX = 2000;
@@ -64,8 +97,9 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       const prompt = this.buildFimPrompt(language, prefix, suffix);
       if (token.isCancellationRequested) return undefined;
 
-      const model = vscode.workspace.getConfiguration("llmcode.autocomplete").get<string>("model", "");
-      const completion = await this.bridge.generateText(prompt, model || undefined);
+      const model = resolveModel();
+      const { text: completion, model: actual } = await this.bridge.generateText(prompt, model || undefined);
+      logModel("autocomplete", model || undefined, actual);
       if (token.isCancellationRequested) return undefined;
       if (!completion || !completion.trim()) return undefined;
 
@@ -141,7 +175,9 @@ export async function inlineEditSelection(bridge: OpencodeBridge): Promise<void>
     { location: vscode.ProgressLocation.Notification, title: l10n.t("LLMcode: editing…") },
     async () => {
       try {
-        const result = await bridge.generateText(prompt);
+        const model = resolveModel();
+        const { text: result, model: actual } = await bridge.generateText(prompt, model || undefined);
+        logModel("inline-edit", model || undefined, actual);
         if (!result) return;
         const newText = result.replace(/^```[a-zA-Z0-9+]*\n?/, "").replace(/```$/, "").trimEnd();
 
@@ -176,7 +212,9 @@ export async function selectionCommand(bridge: OpencodeBridge, kind: string): Pr
     { location: vscode.ProgressLocation.Notification, title: l10n.t("LLMcode: {0}…", kind) },
     async () => {
       try {
-        const result = await bridge.generateText(prompt);
+        const model = resolveModel();
+        const { text: result, model: actual } = await bridge.generateText(prompt, model || undefined);
+        logModel(kind, model || undefined, actual);
         if (!result) return;
         showResultPanel(kind, result, language);
       } catch (err) {

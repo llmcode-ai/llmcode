@@ -67,4 +67,10 @@ suite("LLMcode Engine Bridge", () => {
     assert.ok(Array.isArray(sessions), "listSessions should recover and return an array");
     assert.ok(bridge.isConnected(), "expected reconnected after automatic restart");
   });
+  test("generateText reports the actual model used", async function () {
+    this.timeout(60000);
+    const res = await bridge.generateText("Reply with the single word: OK");
+    assert.ok(typeof res.text === "string", "expected text");
+    assert.ok(res.model && res.model.includes("/"), `expected provider/model, got ${res.model}`);
+  });
 });

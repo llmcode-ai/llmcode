@@ -433,15 +433,19 @@ export class OpencodeBridge {
    * dedicated generate endpoint, so we run a throwaway session prompt and
    * read back the concatenated text parts.
    */
-  async generateText(prompt: string, model?: string): Promise<string> {
+  async generateText(prompt: string, model?: string): Promise<{ text: string; model?: string }> {
     const session = await this.createSession("_generate");
     try {
       const res: any = await this.prompt(session.id, prompt, { model });
       const parts = res?.parts ?? [];
-      return parts
+      const text = parts
         .filter((p: any) => p.type === "text")
         .map((p: any) => p.text)
         .join("");
+      const info = res?.info;
+      const actualModel =
+        info?.providerID && info?.modelID ? `${info.providerID}/${info.modelID}` : undefined;
+      return { text, model: actualModel };
     } finally {
       await this.deleteSession(session.id).catch(() => undefined);
     }
