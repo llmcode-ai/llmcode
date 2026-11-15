@@ -42,8 +42,8 @@ function resolveModel(): string | undefined {
 }
 
 const DEBOUNCE_MS = 200;
-const MAX_PREFIX = 4000;
-const MAX_SUFFIX = 2000;
+const MAX_PREFIX = 2000;
+const MAX_SUFFIX = 800;
 
 export class AutocompleteProvider implements vscode.InlineCompletionItemProvider {
   private timer: NodeJS.Timeout | undefined;
@@ -103,7 +103,7 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
       if (token.isCancellationRequested) return undefined;
       if (!completion || !completion.trim()) return undefined;
 
-      const cleaned = this.cleanCompletion(completion, suffix);
+      const cleaned = this.cleanCompletion(completion, suffix, prefix);
       if (!cleaned) return undefined;
 
       return [new vscode.InlineCompletionItem(cleaned, undefined)];
@@ -116,23 +116,65 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   }
 
   private buildFimPrompt(language: string, prefix: string, suffix: string): string {
-    // Fill-in-the-middle prompt. The engine model sees the surrounding code.
+    // Concise fill-in-the-middle prompt. Shorter prompt = faster response.
+    const hasSuffix = suffix.trim().length > 0;
     return [
-      `Complete the code in the middle. Return ONLY the completed code, no explanation, no markdown fences.`,
-      ``,
-      `<|file|> (language: ${language})`,
+      `Continue the ${language} code at the cursor. Output ONLY the code to insert — no fences, no explanation.`,
+      hasSuffix ? `The code after the cursor is shown after <after>; do not repeat it.` : ``,
+      `--- before ---`,
       prefix,
-      `<|cursor|>`,
-      `...`,
-      suffix,
-      `<|end|>`,
-      ``,
-      `Completion:`,
-    ].join("\n");
+      `--- insert here ---`,
+      hasSuffix ? `--- after ---\n${suffix}\n--- end after ---` : ``,
+    ]
+      .filter((l) => l !== ``)
+      .join("\n");
   }
 
-  private cleanCompletion(completion: string, suffix: string): string {
-    let out = completion.replace(/^```[a-zA-Z0-9+]*\n?/, "").replace(/```$/, "").trim();
+  private cleanCompletion(completion: string, suffix: string, prefix: string): string {
+    let out = completion.trim();
+    // Strip a leading language fence (```python) and any trailing fence.
+    out = out.replace(/^```[a-zA-Z0-9+]*\s*\n?/, "").replace(/```\s*$/, "");
+
+    const outLines = out.split("\n");
+    const prefixTrimmed = prefix.replace(/\s+$/, "");
+
+    // Drop leading lines the model echoed from the end of the prefix. Walk the
+    // prefix's trailing lines backwards and remove completions lines that match.
+    const prefixLines = prefixTrimmed.split("\n").map((l) => l.trimEnd());
+    let guard = 0;
+    while (outLines.length > 0 && guard < 200) {
+      const first = (outLines[0] ?? "").trimEnd();
+      if (!first.trim()) {
+        outLines.shift();
+        guard++;
+        continue;
+      }
+      // Find this line at the very end of the prefix (allowing a few lines back).
+      const norm = (v: string) => v.replace(/\s+/g, " ").replace(/\s*([,:()])\s*/g, "$1").trim();
+      // If the completion re-emits a line that already exists in the prefix
+      // (e.g. the function header), drop it — the cursor is past that point.
+      const existsInPrefix = first.trim().length > 0 && prefixLines.some((pl) => norm(pl) === norm(first));
+      if (existsInPrefix) {
+        outLines.shift();
+        guard++;
+        continue;
+      }
+      break;
+    }
+    out = outLines.join("\n").trimEnd();
+
+    // If the completion repeats the tail of the prefix's last line at the start
+    // (the cursor continues that line), strip the overlap.
+    const lastPrefixLine = (prefixLines[prefixLines.length - 1] ?? "").trimStart();
+    if (lastPrefixLine) {
+      const firstOutLine = out.split("\n")[0].trimStart();
+      if (firstOutLine.startsWith(lastPrefixLine) && lastPrefixLine.length >= 3) {
+        const removed = out.indexOf(firstOutLine);
+        const rest = firstOutLine.slice(lastPrefixLine.length);
+        out = (out.slice(0, removed) + rest + out.slice(removed + firstOutLine.length)).replace(/^\s*\n/, "").trimStart();
+      }
+    }
+
     // Strip a trailing duplicated first line of the suffix if the model echoed it.
     if (suffix.trim().length > 0) {
       const firstSuffixLine = suffix.trimStart().split("\n")[0];

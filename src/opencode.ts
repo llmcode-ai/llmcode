@@ -433,22 +433,52 @@ export class OpencodeBridge {
    * dedicated generate endpoint, so we run a throwaway session prompt and
    * read back the concatenated text parts.
    */
-  async generateText(prompt: string, model?: string): Promise<{ text: string; model?: string }> {
+  // A long-lived session reused for autocomplete/inline generation so repeated
+  // prompts stay "warm" (the first cold prompt is several times slower).
+  private generateSessionId: string | undefined;
+
+  private async getGenerateSession(): Promise<string> {
+    if (this.generateSessionId) return this.generateSessionId;
     const session = await this.createSession("_generate");
+    this.generateSessionId = session.id;
+    this.generateUses = 0;
+    return session.id;
+  }
+  private generateUses = 0;
+
+  /** Reset the persistent generation session (e.g. after a model/engine change). */
+  private async resetGenerateSession() {
+    const id = this.generateSessionId;
+    this.generateSessionId = undefined;
+    if (id) await this.deleteSession(id).catch(() => undefined);
+  }
+
+  async generateText(prompt: string, model?: string): Promise<{ text: string; model?: string }> {
+    const run = async () => {
+      // Recycle the warm session periodically so its history doesn't bloat and
+      // slow down completions.
+      if (this.generateSessionId && this.generateUses >= 15) await this.resetGenerateSession();
+      const id = await this.getGenerateSession();
+      this.generateUses++;
+      return await this.prompt(id, prompt, { model });
+    };
+    let res: any;
     try {
-      const res: any = await this.prompt(session.id, prompt, { model });
-      const parts = res?.parts ?? [];
-      const text = parts
-        .filter((p: any) => p.type === "text")
-        .map((p: any) => p.text)
-        .join("");
-      const info = res?.info;
-      const actualModel =
-        info?.providerID && info?.modelID ? `${info.providerID}/${info.modelID}` : undefined;
-      return { text, model: actualModel };
-    } finally {
-      await this.deleteSession(session.id).catch(() => undefined);
+      res = await run();
+    } catch {
+      // Session may have gone stale; recreate once and retry.
+      await this.resetGenerateSession();
+      res = await run();
     }
+    const parts = res?.parts ?? [];
+    const text = parts
+      .filter((p: any) => p.type === "text")
+      .map((p: any) => p.text)
+      .join("");
+    const info = res?.info;
+    const actualModel =
+      info?.providerID && info?.modelID ? `${info.providerID}/${info.modelID}` : undefined;
+    return { text, model: actualModel };
   }
 
   async dispose() {
@@ -456,5 +486,6 @@ export class OpencodeBridge {
       this.instance.close();
       this.instance = undefined;
     }
+    this.generateSessionId = undefined;
   }
 }

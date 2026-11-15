@@ -47,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("llmcode.installOpencode", () => installOpencode()),
     vscode.commands.registerCommand("llmcode.openTerminal", () => openTerminal()),
     vscode.commands.registerCommand("llmcode.toggleAutocomplete", () => toggleAutocomplete()),
+    vscode.commands.registerCommand("llmcode.takeoverInline", () => takeoverInlineSuggestions()),
     vscode.commands.registerCommand("llmcode.inlineEdit", () => inlineEditSelection(bridge)),
     vscode.commands.registerCommand("llmcode.explainSelection", () => selectionCommand(bridge, "explain")),
     vscode.commands.registerCommand("llmcode.fixSelection", () => selectionCommand(bridge, "fix")),
@@ -152,6 +153,21 @@ function toggleAutocomplete() {
   const next = !cfg.get<boolean>("enabled", true);
   cfg.update("enabled", next, vscode.ConfigurationTarget.Global);
   vscode.window.showInformationMessage(next ? l10n.t("Autocomplete enabled") : l10n.t("Autocomplete disabled"));
+}
+
+
+async function takeoverInlineSuggestions() {
+  // Disable Copilot's inline (ghost-text) suggestions and next-edit suggestions,
+  // and enable LLMcode's autocomplete, so typing in a file runs on opencode.
+  const g = vscode.ConfigurationTarget.Global;
+  await vscode.workspace.getConfiguration("github.copilot").update("enable", { "*": false }, g);
+  await vscode.workspace.getConfiguration("github.copilot").update("inlineEditsEnabled", false, g);
+  await vscode.workspace.getConfiguration("github.copilot").update("nextEditSuggestions.enabled", false, g);
+  await vscode.workspace.getConfiguration("editor").update("inlineSuggest.enabled", true, g);
+  await vscode.workspace.getConfiguration("llmcode.autocomplete").update("enabled", true, g);
+  vscode.window.showInformationMessage(
+    l10n.t("Copilot inline suggestions are disabled. LLMcode now provides autocomplete — reload the window to apply."),
+  );
 }
 
 async function runImport(context: vscode.ExtensionContext) {

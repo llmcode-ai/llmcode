@@ -88,6 +88,10 @@
         "title": "%command.toggleAutocomplete%"
       },
       {
+        "command": "llmcode.takeoverInline",
+        "title": "%command.takeoverInline%"
+      },
+      {
         "command": "llmcode.inlineEdit",
         "title": "%command.inlineEdit%"
       },

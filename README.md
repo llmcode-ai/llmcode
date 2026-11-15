@@ -79,6 +79,7 @@ Programmatically: `vscode.lm.selectChatModels({ vendor: 'llmcode' })` returns th
 | `LLMcode: Inline Edit Selection` | `Ctrl+K` | Rewrites the selected code via opencode |
 | `LLMcode: Explain / Fix / Refactor Selection` | — | Selection commands (editor context menu) |
 | `LLMcode: Toggle Autocomplete` | — | Enables/disables ghost-text completions |
+| `LLMcode: Take Over Inline Suggestions` | — | Disables Copilot autocomplete and enables LLMcode's |
 | `LLMcode: Check opencode Installation` | — | Detects the CLI, offers to install |
 | `LLMcode: Install opencode` | — | Runs the installer in the integrated terminal |
 | `LLMcode: Open Terminal Session` | — | Opens a terminal running `opencode` |

@@ -170,6 +170,26 @@ LLMcode reads each model's limits from the opencode engine and reports them to V
 
 ## 9. Verifying it's LLMcode answering
 
+### Turn off Copilot's autocomplete first
+
+So typing in a file uses LLMcode (and does not spend Copilot credits), run **LLMcode: Take Over Inline Suggestions**. It sets:
+
+```json
+"github.copilot.enable": { "*": false },
+"github.copilot.inlineEditsEnabled": false,
+"github.copilot.nextEditSuggestions.enabled": false,
+"editor.inlineSuggest.enabled": true,
+"llmcode.autocomplete.enabled": true
+```
+
+Choose a **fast model** for autocomplete to keep latency low:
+
+```json
+"llmcode.autocomplete.model": "deepseek/deepseek-flash"
+```
+
+Autocomplete reuses one warm session internally, so the first completion after a cold start is slower (several seconds) and subsequent ones are ~1–2 s. If you type continuously you will mostly hit the warm path.
+
 ### For inline autocomplete / inline edits (typing in a file)
 
 LLMcode shows which model actually served each completion:
